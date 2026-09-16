@@ -362,6 +362,88 @@ function limpiarTexto(texto: string): string {
   return s.trim();
 }
 
+// ---------------------------------------------------------------------------
+// Corrección léxica del texto reconocido por OCR.
+// El motor confunde siempre los mismos grupos de letras en prensa impresa
+// ("rn" por "m", "x" por "r", "w" por "in"...). Generamos candidatos
+// aplicando esas confusiones y solo aceptamos el cambio si la palabra
+// original NO está en el léxico y el candidato SÍ lo está: así nunca
+// "inventamos" palabras que el OCR había leído bien.
+// ---------------------------------------------------------------------------
+const LEXICO = new Set<string>(
+  (
+    "a al algo alguna algunas alguno algunos ante antes año años aunque bien cada casi como con contra cuando cual cuanto de del desde donde dos durante el ella ellas ellos en entre era eran eres es esa esas ese eso esos esta estaba estaban estan estar estas este esto estos fue fueron ha habia han hasta hay he la las le les lo los luego mas me menos mi mientras muy nada ni no nos nunca o otra otras otro otros para pero poco por porque primer primera pues que quien se segun ser si sin sobre solo son su sus tambien tanto te tiene tienen todo toda todas todos tras tu un una uno unos y ya " +
+    "partido partidos jugador jugadores equipo equipos entrenador afición campo estadio minuto minutos gol goles temporada liga copa final semifinal cuartos árbitro arbitro victoria derrota empate fichaje club clubes cantera plantilla lesión lesion titular suplente banquillo rival marcador segundos primera segunda tercera ronda combate boxeo boxeadora boxeadoras boxeador púgil pugil cuadrilátero cuadrilatero ovación ovacion asalto asaltos ring pelea peleas campeona campeón campeon medalla oro plata bronce olímpico olimpico olímpica olimpica torneo taiwanesa taiwanés taiwanes argelina argelino género genero intersexual periodista periodistas prueba pruebas polémica polemica público publico " +
+    "dijo dice decía hizo hace hacer llegó llego lleva salió salio saltó salto marcha marchó marcho atender identificado identificada superior demostró demostro mucho mucha más agil ágil precisa preciso rápida rapida rápido rapido nueva nuevo nueva controversia antecedente sucedido donde aguantó aguanto unos miradas apuntaban debut oriental envuelta envueltas enfrentaba primer segundo tercero reproches media hora tarde noche mañana manana ayer hoy sábado sabado domingo lunes martes miércoles miercoles jueves viernes enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre"
+  ).split(/\s+/),
+);
+
+const CONFUSIONES: [string, string][] = [
+  ["rn", "m"],
+  ["m", "rn"],
+  ["w", "in"],
+  ["in", "w"],
+  ["x", "r"],
+  ["r", "x"],
+  ["cl", "d"],
+  ["d", "cl"],
+  ["ii", "n"],
+  ["n", "ii"],
+  ["li", "h"],
+  ["h", "li"],
+  ["l", "i"],
+  ["i", "l"],
+  ["1", "l"],
+  ["0", "o"],
+  ["5", "s"],
+  ["8", "b"],
+  ["c", "e"],
+  ["e", "c"],
+  ["vv", "w"],
+  ["ll", "ll"],
+];
+
+function normalizaClave(palabra: string): string {
+  return palabra
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .normalize("NFC");
+}
+
+function conservaCaja(original: string, corregida: string): string {
+  if (original === original.toUpperCase()) return corregida.toUpperCase();
+  if (original[0] === original[0]?.toUpperCase())
+    return corregida[0]!.toUpperCase() + corregida.slice(1);
+  return corregida;
+}
+
+function corregirPalabra(palabra: string): string {
+  if (palabra.length < 4) return palabra;
+  const clave = normalizaClave(palabra);
+  if (!/^[a-zñ]+$/.test(clave)) return palabra;
+  if (LEXICO.has(clave)) return palabra;
+  const aciertos = new Set<string>();
+  for (const [de, a] of CONFUSIONES) {
+    let desde = 0;
+    for (;;) {
+      const idx = clave.indexOf(de, desde);
+      if (idx === -1) break;
+      const cand = clave.slice(0, idx) + a + clave.slice(idx + de.length);
+      if (LEXICO.has(cand)) aciertos.add(cand);
+      desde = idx + 1;
+    }
+  }
+  // Solo aceptamos la corrección si es inequívoca (un único candidato válido).
+  if (aciertos.size !== 1) return palabra;
+  return conservaCaja(palabra, [...aciertos][0]!);
+}
+
+// Corrige el texto de OCR palabra a palabra respetando puntuación y saltos.
+function corregirOcr(texto: string): string {
+  return texto.replace(/\p{L}+/gu, (w) => corregirPalabra(w));
+}
+
 // Item del PDF con posición y tamaño ya normalizados.
 type NativeItem = {
   str: string;
