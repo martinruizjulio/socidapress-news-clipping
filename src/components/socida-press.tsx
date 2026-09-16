@@ -452,8 +452,9 @@ function normalizaClave(palabra: string): string {
 
 function conservaCaja(original: string, corregida: string): string {
   if (original === original.toUpperCase()) return corregida.toUpperCase();
-  if (original[0] === original[0]?.toUpperCase())
-    return corregida[0]!.toUpperCase() + corregida.slice(1);
+  const inicial = corregida.charAt(0);
+  if (original[0] === original[0]?.toUpperCase() && inicial)
+    return inicial.toUpperCase() + corregida.slice(1);
   return corregida;
 }
 
@@ -475,7 +476,8 @@ function corregirPalabra(palabra: string): string {
   }
   // Solo aceptamos la corrección si es inequívoca (un único candidato válido).
   if (aciertos.size !== 1) return palabra;
-  return conservaCaja(palabra, [...aciertos][0]!);
+  const candidata = [...aciertos][0];
+  return candidata ? conservaCaja(palabra, candidata) : palabra;
 }
 
 // Corrige el texto de OCR palabra a palabra respetando puntuación y saltos.
@@ -2553,7 +2555,10 @@ export default function SocidaPressApp() {
             const t = s.trim();
             if (!t) return "";
             const limpio = corregirOcr(limpiarTexto(t));
-            if (!limpio || esLineaRuido(limpio) || esRuidoMaquetacion(limpio)) return "";
+            // esRuidoMaquetacion trabaja con bloques completos y considera
+            // ruido cualquier texto menor de 60 caracteres. Aplicarlo aquí,
+            // renglón a renglón, eliminaba prácticamente todo el OCR válido.
+            if (!limpio || esLineaRuido(limpio)) return "";
             return limpio;
           });
           const lineas = renglones.filter((s) => s.length > 0);
