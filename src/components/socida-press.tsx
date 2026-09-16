@@ -362,6 +362,88 @@ function limpiarTexto(texto: string): string {
   return s.trim();
 }
 
+// ---------------------------------------------------------------------------
+// Corrección léxica del texto reconocido por OCR.
+// El motor confunde siempre los mismos grupos de letras en prensa impresa
+// ("rn" por "m", "x" por "r", "w" por "in"...). Generamos candidatos
+// aplicando esas confusiones y solo aceptamos el cambio si la palabra
+// original NO está en el léxico y el candidato SÍ lo está: así nunca
+// "inventamos" palabras que el OCR había leído bien.
+// ---------------------------------------------------------------------------
+const LEXICO = new Set<string>(
+  (
+    "a al algo alguna algunas alguno algunos ante antes año años aunque bien cada casi como con contra cuando cual cuanto de del desde donde dos durante el ella ellas ellos en entre era eran eres es esa esas ese eso esos esta estaba estaban estan estar estas este esto estos fue fueron ha habia han hasta hay he la las le les lo los luego mas me menos mi mientras muy nada ni no nos nunca o otra otras otro otros para pero poco por porque primer primera pues que quien se segun ser si sin sobre solo son su sus tambien tanto te tiene tienen todo toda todas todos tras tu un una uno unos y ya " +
+    "partido partidos jugador jugadores equipo equipos entrenador afición campo estadio minuto minutos gol goles temporada liga copa final semifinal cuartos árbitro arbitro victoria derrota empate fichaje club clubes cantera plantilla lesión lesion titular suplente banquillo rival marcador segundos primera segunda tercera ronda combate boxeo boxeadora boxeadoras boxeador púgil pugil cuadrilátero cuadrilatero ovación ovacion asalto asaltos ring pelea peleas campeona campeón campeon medalla oro plata bronce olímpico olimpico olímpica olimpica torneo taiwanesa taiwanés taiwanes argelina argelino género genero intersexual periodista periodistas prueba pruebas polémica polemica público publico " +
+    "dijo dice decía hizo hace hacer llegó llego lleva salió salio saltó salto marcha marchó marcho atender identificado identificada superior demostró demostro mucho mucha más agil ágil precisa preciso rápida rapida rápido rapido nueva nuevo nueva controversia antecedente sucedido donde aguantó aguanto unos miradas apuntaban debut oriental envuelta envueltas enfrentaba primer segundo tercero reproches media hora tarde noche mañana manana ayer hoy sábado sabado domingo lunes martes miércoles miercoles jueves viernes enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre"
+  ).split(/\s+/),
+);
+
+const CONFUSIONES: [string, string][] = [
+  ["rn", "m"],
+  ["m", "rn"],
+  ["w", "in"],
+  ["in", "w"],
+  ["x", "r"],
+  ["r", "x"],
+  ["cl", "d"],
+  ["d", "cl"],
+  ["ii", "n"],
+  ["n", "ii"],
+  ["li", "h"],
+  ["h", "li"],
+  ["l", "i"],
+  ["i", "l"],
+  ["1", "l"],
+  ["0", "o"],
+  ["5", "s"],
+  ["8", "b"],
+  ["c", "e"],
+  ["e", "c"],
+  ["vv", "w"],
+  ["ll", "ll"],
+];
+
+function normalizaClave(palabra: string): string {
+  return palabra
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .normalize("NFC");
+}
+
+function conservaCaja(original: string, corregida: string): string {
+  if (original === original.toUpperCase()) return corregida.toUpperCase();
+  if (original[0] === original[0]?.toUpperCase())
+    return corregida[0]!.toUpperCase() + corregida.slice(1);
+  return corregida;
+}
+
+function corregirPalabra(palabra: string): string {
+  if (palabra.length < 4) return palabra;
+  const clave = normalizaClave(palabra);
+  if (!/^[a-zñ]+$/.test(clave)) return palabra;
+  if (LEXICO.has(clave)) return palabra;
+  const aciertos = new Set<string>();
+  for (const [de, a] of CONFUSIONES) {
+    let desde = 0;
+    for (;;) {
+      const idx = clave.indexOf(de, desde);
+      if (idx === -1) break;
+      const cand = clave.slice(0, idx) + a + clave.slice(idx + de.length);
+      if (LEXICO.has(cand)) aciertos.add(cand);
+      desde = idx + 1;
+    }
+  }
+  // Solo aceptamos la corrección si es inequívoca (un único candidato válido).
+  if (aciertos.size !== 1) return palabra;
+  return conservaCaja(palabra, [...aciertos][0]!);
+}
+
+// Corrige el texto de OCR palabra a palabra respetando puntuación y saltos.
+function corregirOcr(texto: string): string {
+  return texto.replace(/\p{L}+/gu, (w) => corregirPalabra(w));
+}
+
 // Item del PDF con posición y tamaño ya normalizados.
 type NativeItem = {
   str: string;
@@ -1609,7 +1691,7 @@ export default function SocidaPressApp() {
       // Ancho objetivo (px) para el recorte de cada zona antes del OCR:
       // suficiente para que las letras del cuerpo de texto tengan un
       // tamaño cómodo para el motor, sin disparar la memoria.
-      const ANCHO_OBJETIVO_ZONA = 2200;
+      const ANCHO_OBJETIVO_ZONA = 3400;
 
       // Vuelve a renderizar una zona directamente desde el PDF a alta
       // resolución, en vez de recortar y ampliar el render de página
@@ -1638,7 +1720,7 @@ export default function SocidaPressApp() {
           const altoPdf = Math.max(1, rectPdf.yMax - rectPdf.yMin);
           const esVertical = rotacion === 90 || rotacion === 270;
           const anchoEnPantalla = esVertical ? altoPdf : anchoPdf;
-          const scale = Math.min(9, Math.max(2, ANCHO_OBJETIVO_ZONA / anchoEnPantalla));
+          const scale = Math.min(16, Math.max(2, ANCHO_OBJETIVO_ZONA / anchoEnPantalla));
           const viewport = pageAlta.getViewport({ scale, rotation: rotacion });
           const [vx0, vy0, vx1, vy1] = viewport.viewBox as [number, number, number, number];
           const pdfW = vx1 - vx0;
@@ -1944,6 +2026,53 @@ export default function SocidaPressApp() {
       // más robusta ante sombras irregulares de escaneo o páginas dobladas
       // que un umbral fijo sobre la media. Se aplica solo a la copia que
       // se manda al OCR, no a la que se guarda para el registro.
+      // Enfoque (máscara de desenfoque): realza los bordes de las letras
+      // cuando el recorte viene de un escaneo algo pixelado. Trabajamos en
+      // gris y restamos una versión suavizada 3x3 al original.
+      const enfocar = (canvas: HTMLCanvasElement, fuerza = 1.1): HTMLCanvasElement => {
+        const cx = canvas.getContext("2d");
+        if (!cx) return canvas;
+        const w = canvas.width;
+        const h = canvas.height;
+        const img = cx.getImageData(0, 0, w, h);
+        const d = img.data;
+        const gris = new Float32Array(w * h);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++)
+          gris[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const suave = new Float32Array(w * h);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            let sum = 0;
+            let n = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              const yy = y + dy;
+              if (yy < 0 || yy >= h) continue;
+              for (let dx = -1; dx <= 1; dx++) {
+                const xx = x + dx;
+                if (xx < 0 || xx >= w) continue;
+                sum += gris[yy * w + xx];
+                n++;
+              }
+            }
+            suave[y * w + x] = sum / n;
+          }
+        }
+        for (let j = 0, i = 0; j < gris.length; j++, i += 4) {
+          const v = Math.max(0, Math.min(255, gris[j] + fuerza * (gris[j] - suave[j])));
+          d[i] = v;
+          d[i + 1] = v;
+          d[i + 2] = v;
+          d[i + 3] = 255;
+        }
+        const out = document.createElement("canvas");
+        out.width = w;
+        out.height = h;
+        const ox = out.getContext("2d");
+        if (!ox) return canvas;
+        ox.putImageData(img, 0, 0);
+        return out;
+      };
+
       const binarizarParaOcr = (canvas: HTMLCanvasElement): HTMLCanvasElement => {
         const cx = canvas.getContext("2d");
         if (!cx) return canvas;
@@ -2344,11 +2473,20 @@ export default function SocidaPressApp() {
           // con datos reales (confianza media ~88 en gris frente a ~68
           // binarizado en la misma noticia), así que probamos primero el
           // gris y solo recurrimos a la binarizada si la confianza es baja.
+          // Probamos hasta tres versiones del recorte (gris, enfocada y
+          // binarizada) y nos quedamos con la de mayor confianza: en textos
+          // pequeños o algo pixelados la enfocada gana con claridad, y en
+          // papel muy sucio gana la binarizada.
           const recognizeMejor = async (recorte: HTMLCanvasElement) => {
             const { data: dataGris } = await w.recognize(recorte);
             let t = (dataGris.text || "").trim();
             let conf = dataGris.confidence ?? 0;
-            if (conf < 75) {
+            const { data: dataNitida } = await w.recognize(enfocar(recorte));
+            if ((dataNitida.confidence ?? 0) > conf) {
+              t = (dataNitida.text || "").trim();
+              conf = dataNitida.confidence ?? 0;
+            }
+            if (conf < 88) {
               const { data: dataBin } = await w.recognize(binarizarParaOcr(recorte));
               const confBin = dataBin.confidence ?? 0;
               if (confBin > conf) {
@@ -2372,7 +2510,7 @@ export default function SocidaPressApp() {
           pagesText.push({ page: z.page, text: bruto });
           const lineas = bruto
             .split(/\n+/g)
-            .map((s) => limpiarTexto(s))
+            .map((s) => corregirOcr(limpiarTexto(s)))
             .filter((s) => s.length > 0 && !esLineaRuido(s));
           if (!titulo && lineas.length) {
             const cand = lineas.find((l) => l.length >= 8 && l.length <= 120);
@@ -2380,7 +2518,7 @@ export default function SocidaPressApp() {
           }
           texto = bruto
             .split(/\n\s*\n+/g)
-            .map((s) => limpiarTexto(s))
+            .map((s) => corregirOcr(limpiarTexto(s)))
             .filter((s) => s.length > 25 && !esRuidoMaquetacion(s))
             .join("\n\n");
         }
