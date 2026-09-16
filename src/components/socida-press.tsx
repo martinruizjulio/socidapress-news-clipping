@@ -2547,19 +2547,21 @@ export default function SocidaPressApp() {
           }
           const bruto = textos.join("\n");
           pagesText.push({ page: z.page, text: bruto });
-          const lineas = bruto
-            .split(/\n+/g)
-            .map((s) => corregirOcr(limpiarTexto(s)))
-            .filter((s) => s.length > 0 && !esLineaRuido(s));
+          // Limpiamos renglón a renglón conservando los huecos, para poder
+          // reconstruir después los párrafos en un texto continuo.
+          const renglones = bruto.split(/\n/g).map((s) => {
+            const t = s.trim();
+            if (!t) return "";
+            const limpio = corregirOcr(limpiarTexto(t));
+            if (!limpio || esLineaRuido(limpio) || esRuidoMaquetacion(limpio)) return "";
+            return limpio;
+          });
+          const lineas = renglones.filter((s) => s.length > 0);
           if (!titulo && lineas.length) {
             const cand = lineas.find((l) => l.length >= 8 && l.length <= 120);
             if (cand) titulo = cand;
           }
-          texto = bruto
-            .split(/\n\s*\n+/g)
-            .map((s) => corregirOcr(limpiarTexto(s)))
-            .filter((s) => s.length > 25 && !esRuidoMaquetacion(s))
-            .join("\n\n");
+          texto = reflujoParrafos(renglones);
         }
 
         if (!texto && !titulo) continue;
