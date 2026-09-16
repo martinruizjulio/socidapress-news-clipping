@@ -2473,11 +2473,20 @@ export default function SocidaPressApp() {
           // con datos reales (confianza media ~88 en gris frente a ~68
           // binarizado en la misma noticia), así que probamos primero el
           // gris y solo recurrimos a la binarizada si la confianza es baja.
+          // Probamos hasta tres versiones del recorte (gris, enfocada y
+          // binarizada) y nos quedamos con la de mayor confianza: en textos
+          // pequeños o algo pixelados la enfocada gana con claridad, y en
+          // papel muy sucio gana la binarizada.
           const recognizeMejor = async (recorte: HTMLCanvasElement) => {
             const { data: dataGris } = await w.recognize(recorte);
             let t = (dataGris.text || "").trim();
             let conf = dataGris.confidence ?? 0;
-            if (conf < 75) {
+            const { data: dataNitida } = await w.recognize(enfocar(recorte));
+            if ((dataNitida.confidence ?? 0) > conf) {
+              t = (dataNitida.text || "").trim();
+              conf = dataNitida.confidence ?? 0;
+            }
+            if (conf < 88) {
               const { data: dataBin } = await w.recognize(binarizarParaOcr(recorte));
               const confBin = dataBin.confidence ?? 0;
               if (confBin > conf) {
