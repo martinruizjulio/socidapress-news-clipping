@@ -1720,7 +1720,7 @@ export default function SocidaPressApp() {
           const altoPdf = Math.max(1, rectPdf.yMax - rectPdf.yMin);
           const esVertical = rotacion === 90 || rotacion === 270;
           const anchoEnPantalla = esVertical ? altoPdf : anchoPdf;
-          const scale = Math.min(9, Math.max(2, ANCHO_OBJETIVO_ZONA / anchoEnPantalla));
+          const scale = Math.min(16, Math.max(2, ANCHO_OBJETIVO_ZONA / anchoEnPantalla));
           const viewport = pageAlta.getViewport({ scale, rotation: rotacion });
           const [vx0, vy0, vx1, vy1] = viewport.viewBox as [number, number, number, number];
           const pdfW = vx1 - vx0;
