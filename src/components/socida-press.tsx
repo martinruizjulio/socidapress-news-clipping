@@ -2026,6 +2026,53 @@ export default function SocidaPressApp() {
       // más robusta ante sombras irregulares de escaneo o páginas dobladas
       // que un umbral fijo sobre la media. Se aplica solo a la copia que
       // se manda al OCR, no a la que se guarda para el registro.
+      // Enfoque (máscara de desenfoque): realza los bordes de las letras
+      // cuando el recorte viene de un escaneo algo pixelado. Trabajamos en
+      // gris y restamos una versión suavizada 3x3 al original.
+      const enfocar = (canvas: HTMLCanvasElement, fuerza = 1.1): HTMLCanvasElement => {
+        const cx = canvas.getContext("2d");
+        if (!cx) return canvas;
+        const w = canvas.width;
+        const h = canvas.height;
+        const img = cx.getImageData(0, 0, w, h);
+        const d = img.data;
+        const gris = new Float32Array(w * h);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++)
+          gris[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const suave = new Float32Array(w * h);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            let sum = 0;
+            let n = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              const yy = y + dy;
+              if (yy < 0 || yy >= h) continue;
+              for (let dx = -1; dx <= 1; dx++) {
+                const xx = x + dx;
+                if (xx < 0 || xx >= w) continue;
+                sum += gris[yy * w + xx];
+                n++;
+              }
+            }
+            suave[y * w + x] = sum / n;
+          }
+        }
+        for (let j = 0, i = 0; j < gris.length; j++, i += 4) {
+          const v = Math.max(0, Math.min(255, gris[j] + fuerza * (gris[j] - suave[j])));
+          d[i] = v;
+          d[i + 1] = v;
+          d[i + 2] = v;
+          d[i + 3] = 255;
+        }
+        const out = document.createElement("canvas");
+        out.width = w;
+        out.height = h;
+        const ox = out.getContext("2d");
+        if (!ox) return canvas;
+        ox.putImageData(img, 0, 0);
+        return out;
+      };
+
       const binarizarParaOcr = (canvas: HTMLCanvasElement): HTMLCanvasElement => {
         const cx = canvas.getContext("2d");
         if (!cx) return canvas;
