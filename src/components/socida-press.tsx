@@ -1691,7 +1691,7 @@ export default function SocidaPressApp() {
       // Ancho objetivo (px) para el recorte de cada zona antes del OCR:
       // suficiente para que las letras del cuerpo de texto tengan un
       // tamaño cómodo para el motor, sin disparar la memoria.
-      const ANCHO_OBJETIVO_ZONA = 2200;
+      const ANCHO_OBJETIVO_ZONA = 3400;
 
       // Vuelve a renderizar una zona directamente desde el PDF a alta
       // resolución, en vez de recortar y ampliar el render de página
