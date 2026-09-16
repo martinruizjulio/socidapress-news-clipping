@@ -2510,7 +2510,7 @@ export default function SocidaPressApp() {
           pagesText.push({ page: z.page, text: bruto });
           const lineas = bruto
             .split(/\n+/g)
-            .map((s) => limpiarTexto(s))
+            .map((s) => corregirOcr(limpiarTexto(s)))
             .filter((s) => s.length > 0 && !esLineaRuido(s));
           if (!titulo && lineas.length) {
             const cand = lineas.find((l) => l.length >= 8 && l.length <= 120);
@@ -2518,7 +2518,7 @@ export default function SocidaPressApp() {
           }
           texto = bruto
             .split(/\n\s*\n+/g)
-            .map((s) => limpiarTexto(s))
+            .map((s) => corregirOcr(limpiarTexto(s)))
             .filter((s) => s.length > 25 && !esRuidoMaquetacion(s))
             .join("\n\n");
         }
