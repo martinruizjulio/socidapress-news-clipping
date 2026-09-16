@@ -363,6 +363,45 @@ function limpiarTexto(texto: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Reflujo del cuerpo de la noticia.
+// El OCR devuelve una línea por renglón de columna, así que el texto llega
+// troceado. Volvemos a unir los renglones en párrafos continuos: unimos la
+// palabra partida por guión, encadenamos los renglones con un espacio y solo
+// abrimos párrafo nuevo cuando la frase anterior ha terminado de verdad.
+// ---------------------------------------------------------------------------
+function reflujoParrafos(lineas: string[]): string {
+  const parrafos: string[] = [];
+  let actual = "";
+  const cierra = (s: string) => /[.!?"”]\s*$/.test(s);
+  for (const linea of lineas) {
+    const l = linea.trim();
+    if (!l) {
+      // Hueco en el original: solo corta si la frase estaba cerrada.
+      if (actual && cierra(actual)) {
+        parrafos.push(actual.trim());
+        actual = "";
+      }
+      continue;
+    }
+    if (!actual) {
+      actual = l;
+      continue;
+    }
+    if (/[-‐]$/.test(actual)) {
+      // Palabra partida al final del renglón o de la columna.
+      actual = actual.replace(/[-‐]$/, "") + l;
+    } else {
+      actual = `${actual} ${l}`;
+    }
+  }
+  if (actual.trim()) parrafos.push(actual.trim());
+  return parrafos
+    .map((p) => p.replace(/\s{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1"))
+    .filter((p) => p.length > 0)
+    .join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
 // Corrección léxica del texto reconocido por OCR.
 // El motor confunde siempre los mismos grupos de letras en prensa impresa
 // ("rn" por "m", "x" por "r", "w" por "in"...). Generamos candidatos
@@ -2508,19 +2547,21 @@ export default function SocidaPressApp() {
           }
           const bruto = textos.join("\n");
           pagesText.push({ page: z.page, text: bruto });
-          const lineas = bruto
-            .split(/\n+/g)
-            .map((s) => corregirOcr(limpiarTexto(s)))
-            .filter((s) => s.length > 0 && !esLineaRuido(s));
+          // Limpiamos renglón a renglón conservando los huecos, para poder
+          // reconstruir después los párrafos en un texto continuo.
+          const renglones = bruto.split(/\n/g).map((s) => {
+            const t = s.trim();
+            if (!t) return "";
+            const limpio = corregirOcr(limpiarTexto(t));
+            if (!limpio || esLineaRuido(limpio) || esRuidoMaquetacion(limpio)) return "";
+            return limpio;
+          });
+          const lineas = renglones.filter((s) => s.length > 0);
           if (!titulo && lineas.length) {
             const cand = lineas.find((l) => l.length >= 8 && l.length <= 120);
             if (cand) titulo = cand;
           }
-          texto = bruto
-            .split(/\n\s*\n+/g)
-            .map((s) => corregirOcr(limpiarTexto(s)))
-            .filter((s) => s.length > 25 && !esRuidoMaquetacion(s))
-            .join("\n\n");
+          texto = reflujoParrafos(renglones);
         }
 
         if (!texto && !titulo) continue;
