@@ -909,7 +909,10 @@ function RegionPicker({
 interface LibraryViewProps {
   noticias: SavedNoticia[];
   editingId: string | null;
-  highlightId: string | null;
+  // Varias entradas pueden haberse guardado a la vez (una por cada
+  // bloque/noticia parcial seleccionado), así que resaltamos todas las
+  // que vienen del último guardado, no solo una.
+  highlightIds: Set<string>;
   onEdit: (id: string | null) => void;
   onDelete: (id: string) => void;
   onUpdate: (n: SavedNoticia) => void;
@@ -919,12 +922,26 @@ interface LibraryViewProps {
 function LibraryView({
   noticias,
   editingId,
-  highlightId,
+  highlightIds,
   onEdit,
   onDelete,
   onUpdate,
   onNew,
 }: LibraryViewProps) {
+  // La biblioteca se muestra ordenada por fecha y hora de la noticia (la
+  // más reciente primero), no por orden de guardado. Las que no tienen
+  // fecha reconocible (vacía o texto libre no parseable) van al final,
+  // manteniendo entre ellas el orden de guardado.
+  const noticiasOrdenadas = useMemo(() => {
+    const claveTiempo = (n: SavedNoticia): number => {
+      if (!n.fecha) return -Infinity;
+      const hora = n.hora && /^\d{1,2}:\d{2}/.test(n.hora) ? n.hora : "00:00";
+      const t = Date.parse(`${n.fecha}T${hora}`);
+      return Number.isNaN(t) ? -Infinity : t;
+    };
+    return [...noticias].sort((a, b) => claveTiempo(b) - claveTiempo(a));
+  }, [noticias]);
+
   const editing = noticias.find((n) => n.id === editingId) ?? null;
   const [draft, setDraft] = useState<SavedNoticia | null>(editing);
   useEffect(() => {
@@ -1129,11 +1146,11 @@ function LibraryView({
           </p>
         ) : (
           <div className="space-y-3">
-            {noticias.map((n) => (
+            {noticiasOrdenadas.map((n) => (
               <div
                 key={n.id}
                 className={`flex flex-col gap-3 rounded-md border p-4 md:flex-row md:items-center ${
-                  n.id === highlightId ? "border-primary" : ""
+                  highlightIds.has(n.id) ? "border-primary" : ""
                 }`}
               >
                 {n.bloques[0]?.imagenSeleccion || n.bloques[0]?.imagenPagina ? (
@@ -1214,7 +1231,7 @@ export default function SocidaPressApp() {
   // Biblioteca persistente en localStorage
   const [saved, setSaved] = useState<SavedNoticia[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  const [lastSavedIds, setLastSavedIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     setSaved(cargarNoticias());
   }, []);
@@ -2678,50 +2695,62 @@ export default function SocidaPressApp() {
   const canFinish =
     metadata.periodico.trim() && metadata.titulo.trim() && metadata.fecha && metadata.hora;
 
-  // Construye el objeto persistente a partir del estado actual de edición.
-  const buildSavedNoticia = (id: string, createdAt: number): SavedNoticia => ({
-    id,
-    createdAt,
-    updatedAt: Date.now(),
-    periodico: metadata.periodico,
-    titulo: metadata.titulo,
-    fecha: metadata.fecha,
-    hora: metadata.hora,
-    bloques: finalTexts.map((t) => {
+  // Cada bloque (zona) seleccionado es una noticia parcial independiente:
+  // se guarda como su PROPIA entrada en la biblioteca, con su propio
+  // periódico/título/fecha/hora (heredando el del documento solo si la
+  // zona no tenía el suyo propio). Conserva la imagen de la página
+  // completa (imagenPagina) para poder ver de dónde salió, aunque ya no
+  // comparta biblioteca con el resto de bloques de ese mismo PDF.
+  const buildSavedNoticias = (createdAt: number): SavedNoticia[] =>
+    finalTexts.map((t, idx) => {
       const pi = pageImages.find((p) => p.page === t.page);
-      return {
+      const id = `n_${createdAt}_${idx}_${Math.random().toString(36).slice(2, 8)}`;
+      const bloque: SavedBlock = {
         id: t.id,
         page: t.page,
-        periodico: t.periodico ?? "",
+        periodico: t.periodico || metadata.periodico,
         titulo: t.titulo ?? "",
-        fecha: t.fecha ?? "",
-        hora: t.hora ?? "",
+        fecha: t.fecha || metadata.fecha,
+        hora: t.hora || metadata.hora,
         texto: t.text,
         imagenPagina: pi?.fullDataUrl ?? null,
-
         imagenSeleccion: t.cropDataUrl ?? pi?.cropDataUrl ?? null,
         imagenFoto: t.fotoDataUrl ?? null,
       };
-    }),
-    imagenes: finalImages.map((i) => ({
-      id: i.id,
-      dataUrl: i.dataUrl,
-      ancho: i.width,
-      alto: i.height,
-    })),
-  });
+      return {
+        id,
+        createdAt,
+        updatedAt: createdAt,
+        periodico: t.periodico || metadata.periodico,
+        titulo: t.titulo || metadata.titulo,
+        fecha: t.fecha || metadata.fecha,
+        hora: t.hora || metadata.hora,
+        bloques: [bloque],
+        // La galería de imágenes detectadas es del documento, no de esta
+        // noticia parcial en concreto; no se duplica en cada entrada.
+        imagenes: [],
+      };
+    });
 
   const handleFinish = () => {
     if (!canFinish) {
       toast.error("Revisa periódico, título, fecha y hora antes de guardar.");
       return;
     }
-    const id = `n_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const noticia = buildSavedNoticia(id, Date.now());
-    persist([noticia, ...saved]);
-    setLastSavedId(id);
+    if (finalTexts.length === 0) {
+      toast.error("No hay ningún bloque de texto seleccionado para guardar.");
+      return;
+    }
+    const createdAt = Date.now();
+    const noticias = buildSavedNoticias(createdAt);
+    persist([...noticias, ...saved]);
+    setLastSavedIds(new Set(noticias.map((n) => n.id)));
     setStage("done");
-    toast.success("Noticia guardada en la biblioteca.");
+    toast.success(
+      noticias.length > 1
+        ? `${noticias.length} noticias guardadas en la biblioteca.`
+        : "Noticia guardada en la biblioteca.",
+    );
   };
 
   const openLibrary = () => setStage("library");
@@ -3254,7 +3283,7 @@ export default function SocidaPressApp() {
           <LibraryView
             noticias={saved}
             editingId={editingId}
-            highlightId={lastSavedId}
+            highlightIds={lastSavedIds}
             onEdit={setEditingId}
             onDelete={deleteNoticia}
             onUpdate={updateNoticia}
