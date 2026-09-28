@@ -37,6 +37,7 @@ import {
   Pencil,
   CheckCircle2,
   Circle,
+  Copy,
 } from "lucide-react";
 
 // Tipos internos
@@ -1101,6 +1102,22 @@ function LibraryView({
     const removeBlock = (bid: string) => {
       setDraft({ ...draft, bloques: draft.bloques.filter((b) => b.id !== bid) });
     };
+    // Copia el periódico/fecha/hora "generales" (arriba) a todos los
+    // bloques, para no tener que teclearlos bloque a bloque cuando son
+    // los mismos (lo habitual: todos los bloques salen de la misma
+    // edición del periódico).
+    const aplicarATodosLosBloques = () => {
+      setDraft({
+        ...draft,
+        bloques: draft.bloques.map((b) => ({
+          ...b,
+          periodico: draft.periodico,
+          fecha: draft.fecha,
+          hora: draft.hora,
+        })),
+      });
+      toast.success("Periódico, fecha y hora aplicados a todos los bloques.");
+    };
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
@@ -1176,6 +1193,19 @@ function LibraryView({
               />
             </div>
           </div>
+          {draft.bloques.length > 0 && (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={aplicarATodosLosBloques}
+                className="gap-2"
+              >
+                <Copy className="h-4 w-4" />
+                Aplicar a todos los bloques
+              </Button>
+            </div>
+          )}
 
           <Separator />
 
