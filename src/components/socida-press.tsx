@@ -14,6 +14,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { exportarNoticia, type FormatoExportacion } from "@/lib/noticia-export";
 import { toast } from "sonner";
 import {
   Newspaper,
@@ -71,7 +78,7 @@ type Stage = "form" | "region" | "processing" | "select" | "done" | "library";
 
 // Noticia guardada persistente (localStorage). Contiene todo lo necesario
 // para mostrarla y editarla más tarde sin volver a procesar el PDF.
-interface SavedBlock {
+export interface SavedBlock {
   id: string;
   page: number;
   periodico?: string;
@@ -85,7 +92,7 @@ interface SavedBlock {
   // texto), distinta del recorte completo de la zona.
   imagenFoto?: string | null;
 }
-interface SavedNoticia {
+export interface SavedNoticia {
   id: string;
   createdAt: number;
   updatedAt: number;
@@ -906,6 +913,51 @@ function RegionPicker({
   );
 }
 
+// Menú de descarga de una noticia guardada (y sus bloques) en distintos
+// formatos. Reutilizado tanto en la lista de la biblioteca como en la
+// vista de edición (donde exporta lo que se esté editando en ese momento,
+// incluidos cambios aún no guardados).
+const FORMATOS_EXPORTACION: { formato: FormatoExportacion; etiqueta: string }[] = [
+  { formato: "txt", etiqueta: "Texto (.txt)" },
+  { formato: "csv", etiqueta: "CSV (.csv)" },
+  { formato: "xlsx", etiqueta: "Excel (.xlsx)" },
+  { formato: "pdf", etiqueta: "PDF (.pdf)" },
+  { formato: "docx", etiqueta: "Word (.docx)" },
+];
+
+function ExportMenu({ noticia }: { noticia: SavedNoticia }) {
+  const [exportando, setExportando] = useState(false);
+  const exportar = async (formato: FormatoExportacion) => {
+    setExportando(true);
+    try {
+      await exportarNoticia(noticia, formato);
+    } catch (err) {
+      toast.error(
+        `No se pudo exportar a ${formato}: ${err instanceof Error ? err.message : "error desconocido"}`,
+      );
+    } finally {
+      setExportando(false);
+    }
+  };
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" disabled={exportando} className="gap-2">
+          <Download className="h-4 w-4" />
+          Exportar
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {FORMATOS_EXPORTACION.map(({ formato, etiqueta }) => (
+          <DropdownMenuItem key={formato} onClick={() => exportar(formato)}>
+            {etiqueta}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface LibraryViewProps {
   noticias: SavedNoticia[];
   editingId: string | null;
@@ -969,6 +1021,7 @@ function LibraryView({
             <CardTitle>Editar noticia</CardTitle>
           </div>
           <div className="flex gap-2">
+            <ExportMenu noticia={draft} />
             <Button
               variant="destructive"
               size="sm"
@@ -1190,7 +1243,7 @@ function LibraryView({
                     {new Date(n.updatedAt).toLocaleString("es-ES")}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -1200,6 +1253,7 @@ function LibraryView({
                     <Pencil className="h-4 w-4" />
                     Ver / editar
                   </Button>
+                  <ExportMenu noticia={n} />
                   <Button
                     variant="ghost"
                     size="sm"
