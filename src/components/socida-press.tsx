@@ -2587,8 +2587,11 @@ export default function SocidaPressApp() {
           zona: z.zona,
           periodico: metaZona.periodico || undefined,
           titulo,
-          fecha: metaZona.fecha || "por determinar",
-          hora: metaZona.hora || "por determinar",
+          // Si no se detecta, se deja vacío (con el placeholder del campo
+          // indicando qué hay que escribir) en vez de rellenarlo con un
+          // texto de relleno que el usuario tendría que borrar a mano.
+          fecha: metaZona.fecha || "",
+          hora: metaZona.hora || "",
           text: texto,
           cropDataUrl: z.cropDataUrl,
           fotoDataUrl: z.fotoDataUrl,
@@ -2608,13 +2611,12 @@ export default function SocidaPressApp() {
         .join("\n");
       const ocrFull = pagesText.map((p) => p.text).join("\n") + "\n" + headerTexts.join("\n");
       const meta = extraerMetadatos(`${nativeFull}\n${ocrFull}`, tituloDetectado);
-      // Si no se detecta fecha, la dejamos "por determinar".
-      // Si no se detecta hora pero sí fecha, usamos la hora actual;
-      // si tampoco hay fecha, la hora queda "por determinar".
-      if (!meta.fecha) {
-        meta.fecha = "por determinar";
-        if (!meta.hora) meta.hora = "por determinar";
-      } else if (!meta.hora) {
+      // Si no se detecta fecha ni hora, dejamos el campo vacío: el
+      // placeholder del input ya indica qué hay que rellenar, y así el
+      // usuario no tiene que borrar un texto de relleno antes de escribir
+      // el dato real. Solo si hay fecha pero no hora, usamos la hora
+      // actual como mejor estimación (eso sí es un dato, no un relleno).
+      if (meta.fecha && !meta.hora) {
         meta.hora = new Date().toTimeString().slice(0, 5);
       }
       setMetadata(meta);
@@ -2624,7 +2626,7 @@ export default function SocidaPressApp() {
       // página), usamos el detectado a nivel de página como valor por
       // defecto para esa zona. Cada bloque sigue siendo editable aparte.
       for (const b of blocks) {
-        if (!b.periodico) b.periodico = meta.periodico || "por determinar";
+        if (!b.periodico) b.periodico = meta.periodico || "";
       }
 
       setProgress(100);
@@ -2946,8 +2948,9 @@ export default function SocidaPressApp() {
                     <Label htmlFor="fecha">Fecha</Label>
                     <Input
                       id="fecha"
-                      type={metadata.fecha === "por determinar" ? "text" : "date"}
+                      type={metadata.fecha ? "date" : "text"}
                       value={metadata.fecha}
+                      placeholder="No detectada, revisa el PDF"
                       onChange={(e) => setMetadata({ ...metadata, fecha: e.target.value })}
                     />
                   </div>
@@ -2955,8 +2958,9 @@ export default function SocidaPressApp() {
                     <Label htmlFor="hora">Hora</Label>
                     <Input
                       id="hora"
-                      type={metadata.hora === "por determinar" ? "text" : "time"}
+                      type={metadata.hora ? "time" : "text"}
                       value={metadata.hora}
+                      placeholder="No detectada, revisa el PDF"
                       onChange={(e) => setMetadata({ ...metadata, hora: e.target.value })}
                     />
                   </div>
