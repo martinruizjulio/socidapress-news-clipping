@@ -42,12 +42,22 @@ interface ExtractedTextBlock {
   page: number;
   // Índice de la zona marcada por el usuario dentro de la página (1..n).
   zona?: number;
+  // Cada bloque (foto + texto) tiene sus propios campos de periódico,
+  // fecha y hora, independientes de los globales del documento: la
+  // fecha/hora/periódico que aparecen en el texto de ESTA noticia no
+  // tienen por qué coincidir con los de otra noticia de la misma página.
+  periodico?: string;
   titulo?: string;
   fecha?: string;
   hora?: string;
   text: string;
-  // Recorte mejorado (redimensionado + ajuste de luz/color) de la zona.
+  // Recorte mejorado (redimensionado + ajuste de luz/color) de la zona
+  // completa (foto + texto), tal y como la marcó el usuario.
   cropDataUrl?: string;
+  // Si dentro de la zona se detectó una fotografía separada del texto,
+  // su recorte en color (sin pasar por gris/OCR) para poder mostrarla y
+  // guardarla junto a su propio bloque de texto.
+  fotoDataUrl?: string;
 }
 
 interface Metadata {
@@ -64,12 +74,16 @@ type Stage = "form" | "region" | "processing" | "select" | "done" | "library";
 interface SavedBlock {
   id: string;
   page: number;
+  periodico?: string;
   titulo: string;
   fecha: string;
   hora: string;
   texto: string;
   imagenPagina?: string | null;
   imagenSeleccion?: string | null;
+  // Foto propia del bloque (si la zona tenía una fotografía separada del
+  // texto), distinta del recorte completo de la zona.
+  imagenFoto?: string | null;
 }
 interface SavedNoticia {
   id: string;
@@ -1013,6 +1027,13 @@ function LibraryView({
                     />
                   </div>
                   <div className="space-y-1">
+                    <Label className="text-xs">Periódico</Label>
+                    <Input
+                      value={b.periodico ?? ""}
+                      onChange={(e) => updateBlock(b.id, { periodico: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
                     <Label className="text-xs">Fecha</Label>
                     <Input
                       value={b.fecha}
@@ -1039,6 +1060,16 @@ function LibraryView({
                     onChange={(e) => updateBlock(b.id, { texto: e.target.value })}
                   />
                 </div>
+                {b.imagenFoto && (
+                  <a href={b.imagenFoto} target="_blank" rel="noreferrer">
+                    <img
+                      src={b.imagenFoto}
+                      alt={`Foto de la noticia, página ${b.page}`}
+                      loading="lazy"
+                      className="w-full rounded border"
+                    />
+                  </a>
+                )}
                 {(b.imagenPagina || b.imagenSeleccion) && (
                   <div className="grid gap-3 md:grid-cols-2">
                     {b.imagenPagina && (
@@ -2015,6 +2046,79 @@ export default function SocidaPressApp() {
         fullDataUrl: canvas.toDataURL("image/webp", 0.85),
       }));
 
+      // Dentro de una misma zona marcada por el usuario suele haber una
+      // fotografía y, debajo o al lado, el texto de la noticia. Si pasamos
+      // toda la zona por OCR tal cual, Tesseract intenta "leer" la foto y
+      // devuelve basura; además no podemos emparejar "la foto de esta
+      // noticia" con "el texto de esta noticia" si no sabemos qué parte de
+      // la zona es cada cosa. Para separarlas, dividimos la zona en franjas
+      // horizontales y clasificamos cada una por la fracción de píxeles
+      // casi blancos: una franja de texto es, sobre todo, papel en blanco
+      // con algo de tinta encima (>55% de la franja queda casi blanca),
+      // mientras que una fotografía —incluso oscura, como un cuadrilátero
+      // de boxeo de noche— cubre casi toda la franja de tono impreso y
+      // apenas deja blanco puro. Usar "casi blanco" en vez de "tono medio"
+      // es clave: una foto oscura tiene muy pocos tonos medios (todo es
+      // negro/sombra) y un contador de tonos medios la clasificaría mal
+      // como texto; verificado con recortes reales de boxeo (fondo oscuro)
+      // y atletismo (grada abarrotada). Franjas contiguas del mismo tipo
+      // se fusionan en una banda.
+      const segmentarFotoTexto = (
+        canvas: HTMLCanvasElement,
+      ): { y0: number; y1: number; tipo: "foto" | "texto" }[] => {
+        const cx = canvas.getContext("2d");
+        const h = canvas.height;
+        const w = canvas.width;
+        if (!cx || w < 1 || h < 1) return [{ y0: 0, y1: h, tipo: "texto" }];
+        const img = cx.getImageData(0, 0, w, h);
+        const d = img.data;
+        const gris = new Uint8ClampedArray(w * h);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) gris[j] = d[i];
+
+        const altoFranja = Math.max(12, Math.round(h * 0.02));
+        const franjas: { y0: number; y1: number; fracBlanco: number }[] = [];
+        for (let y = 0; y < h; y += altoFranja) {
+          const y1 = Math.min(h, y + altoFranja);
+          let blancos = 0;
+          let total = 0;
+          for (let yy = y; yy < y1; yy++) {
+            for (let x = 0; x < w; x++) {
+              if (gris[yy * w + x] > 205) blancos++;
+              total++;
+            }
+          }
+          franjas.push({ y0: y, y1, fracBlanco: total ? blancos / total : 0 });
+        }
+        const UMBRAL_BLANCO = 0.55;
+        const clasificadas = franjas.map((f) => ({
+          ...f,
+          tipo: (f.fracBlanco >= UMBRAL_BLANCO ? "texto" : "foto") as "foto" | "texto",
+        }));
+
+        const fusionar = (
+          items: { y0: number; y1: number; tipo: "foto" | "texto" }[],
+        ): { y0: number; y1: number; tipo: "foto" | "texto" }[] => {
+          const out: { y0: number; y1: number; tipo: "foto" | "texto" }[] = [];
+          for (const it of items) {
+            const ultima = out[out.length - 1];
+            if (ultima && ultima.tipo === it.tipo) ultima.y1 = it.y1;
+            else out.push({ ...it });
+          }
+          return out;
+        };
+
+        let bandas = fusionar(clasificadas);
+        // Descartamos bandas de foto demasiado pequeñas (ruido de una sola
+        // franja mal clasificada): las reasignamos a texto para no generar
+        // miniaturas de foto vacías o irrelevantes.
+        const alturaMin = Math.max(altoFranja * 3, h * 0.08);
+        bandas = bandas.map((b) =>
+          b.tipo === "foto" && b.y1 - b.y0 < alturaMin ? { ...b, tipo: "texto" as const } : b,
+        );
+        bandas = fusionar(bandas);
+        return bandas;
+      };
+
       // 2) Construimos la lista de ZONAS a procesar. Cada zona marcada por el
       //    usuario es una unidad independiente (su propio título, fecha, hora
       //    y bloque de texto). Si no hay zonas, la página completa es la zona.
@@ -2022,8 +2126,17 @@ export default function SocidaPressApp() {
         page: number;
         zona: number;
         rectPdf: PdfRect | null;
+        // Recorte completo de la zona (foto + texto), ya en gris y con luz
+        // corregida: es lo que se muestra como miniatura del bloque.
         recorte: HTMLCanvasElement | null;
+        // Igual que `recorte` pero solo con las franjas de texto (sin la
+        // fotografía), para no hacer pasar la foto por OCR. Si la zona no
+        // tiene foto, es idéntico a `recorte`.
+        recorteSoloTexto: HTMLCanvasElement | null;
         cropDataUrl?: string;
+        // Recorte EN COLOR (sin pasar a gris) de la banda de foto detectada
+        // dentro de la zona, si la hay.
+        fotoDataUrl?: string;
       };
       const zonas: Zona[] = [];
       for (const { page, canvas, rectsPx, rotation } of pageCanvases) {
@@ -2042,16 +2155,86 @@ export default function SocidaPressApp() {
             const mejorado = enderezado
               ? mejorarZona(enderezado, altaRes ? enderezado.width : 2000)
               : null;
+
+            // Separamos foto y texto dentro de la propia zona: así podemos
+            // (a) evitar que el OCR intente "leer" la fotografía y (b)
+            // emparejar cada foto con su propio texto (zona 1 -> foto 1 +
+            // texto 1, zona 2 -> foto 2 + texto 2...) en vez de una lista
+            // de imágenes de la página suelta y sin relación con los
+            // bloques de texto.
+            let fotoDataUrl: string | undefined;
+            let recorteSoloTexto: HTMLCanvasElement | null = mejorado;
+            if (mejorado && enderezado) {
+              const bandas = segmentarFotoTexto(mejorado);
+              const bandasFoto = bandas.filter((b) => b.tipo === "foto");
+              const bandaFoto = bandasFoto.slice().sort((a, b) => b.y1 - b.y0 - (a.y1 - a.y0))[0];
+              if (bandaFoto) {
+                // El recorte en color puede tener una escala distinta a la
+                // versión mejorada en gris (mejorarZona puede redimensionar),
+                // así que mapeamos la banda proporcionalmente.
+                const escalaColor = enderezado.height / mejorado.height;
+                const y0c = Math.max(0, Math.round(bandaFoto.y0 * escalaColor));
+                const y1c = Math.min(enderezado.height, Math.round(bandaFoto.y1 * escalaColor));
+                const altoC = Math.max(1, y1c - y0c);
+                const fotoCanvas = document.createElement("canvas");
+                fotoCanvas.width = enderezado.width;
+                fotoCanvas.height = altoC;
+                const fctx = fotoCanvas.getContext("2d");
+                if (fctx) {
+                  fctx.drawImage(
+                    enderezado,
+                    0,
+                    y0c,
+                    enderezado.width,
+                    altoC,
+                    0,
+                    0,
+                    enderezado.width,
+                    altoC,
+                  );
+                  fotoDataUrl = fotoCanvas.toDataURL("image/webp", 0.9);
+                }
+              }
+              const bandasTexto = bandas.filter((b) => b.tipo === "texto");
+              if (bandasTexto.length && bandasTexto.length < bandas.length) {
+                // Reconstruimos un recorte apilando solo las franjas de
+                // texto, para no pasar la foto por OCR.
+                const altoTotal = bandasTexto.reduce((acc, b) => acc + (b.y1 - b.y0), 0);
+                if (altoTotal > 0) {
+                  const soloTexto = document.createElement("canvas");
+                  soloTexto.width = mejorado.width;
+                  soloTexto.height = altoTotal;
+                  const stx = soloTexto.getContext("2d");
+                  if (stx) {
+                    let yDestino = 0;
+                    for (const b of bandasTexto) {
+                      const altoB = b.y1 - b.y0;
+                      stx.drawImage(mejorado, 0, b.y0, mejorado.width, altoB, 0, yDestino, mejorado.width, altoB);
+                      yDestino += altoB;
+                    }
+                    recorteSoloTexto = soloTexto;
+                  }
+                } else {
+                  recorteSoloTexto = null;
+                }
+              } else if (!bandasTexto.length) {
+                // La zona es solo la fotografía, sin texto que leer.
+                recorteSoloTexto = null;
+              }
+            }
+
             zonas.push({
               page,
               zona: i + 1,
               rectPdf,
               recorte: mejorado,
+              recorteSoloTexto,
               cropDataUrl: mejorado ? mejorado.toDataURL("image/webp", 0.9) : undefined,
+              fotoDataUrl,
             });
           }
         } else {
-          zonas.push({ page, zona: 1, rectPdf: null, recorte: canvas });
+          zonas.push({ page, zona: 1, rectPdf: null, recorte: canvas, recorteSoloTexto: canvas });
         }
       }
       // La primera zona de cada página queda también como recorte resumen.
@@ -2334,7 +2517,7 @@ export default function SocidaPressApp() {
             .join("\n\n");
         }
 
-        if (!texto && z.recorte) {
+        if (!texto && z.recorteSoloTexto) {
           const w = await obtenerWorker();
           // El motor LSTM de Tesseract rinde mejor, en la práctica, sobre
           // la imagen en gris con luz ya corregida que sobre una versión
@@ -2362,7 +2545,7 @@ export default function SocidaPressApp() {
           // con el texto nativo) antes de pasar por OCR, para no depender
           // de que Tesseract adivine solo el orden de lectura en columnas
           // estrechas de periódico.
-          const columnas = dividirEnColumnas(z.recorte);
+          const columnas = dividirEnColumnas(z.recorteSoloTexto);
           const textos: string[] = [];
           for (const col of columnas) {
             const t = await recognizeMejor(col);
@@ -2385,19 +2568,30 @@ export default function SocidaPressApp() {
             .join("\n\n");
         }
 
-        if (!texto && !titulo) continue;
+        // Aunque no se haya podido extraer texto o título (por ejemplo,
+        // una zona que resultó ser solo una fotografía sin pie legible),
+        // mantenemos el bloque: cada zona que el usuario marcó debe
+        // aparecer y poder completarse a mano, no desaparecer en
+        // silencio. Antes se descartaba aquí, y por eso una zona marcada
+        // podía faltar por completo en el resultado.
 
-        // Fecha y hora propias de la zona; si no aparecen, "por determinar".
+        // Periódico, fecha y hora propios de la zona; si no aparecen en
+        // el propio texto (lo normal es que el nombre del periódico solo
+        // salga en la cabecera de la página, no en cada noticia), se
+        // completan después con lo detectado a nivel de página, pero cada
+        // bloque queda siempre editable de forma independiente.
         const metaZona = extraerMetadatos(`${titulo}\n${texto}`, titulo);
         blocks.push({
           id: `z-${z.page}-${z.zona}`,
           page: z.page,
           zona: z.zona,
+          periodico: metaZona.periodico || undefined,
           titulo,
           fecha: metaZona.fecha || "por determinar",
           hora: metaZona.hora || "por determinar",
           text: texto,
           cropDataUrl: z.cropDataUrl,
+          fotoDataUrl: z.fotoDataUrl,
         });
       }
 
@@ -2424,6 +2618,14 @@ export default function SocidaPressApp() {
         meta.hora = new Date().toTimeString().slice(0, 5);
       }
       setMetadata(meta);
+
+      // Si una zona concreta no menciona el periódico en su propio texto
+      // (lo habitual: el nombre solo aparece en la cabecera de la
+      // página), usamos el detectado a nivel de página como valor por
+      // defecto para esa zona. Cada bloque sigue siendo editable aparte.
+      for (const b of blocks) {
+        if (!b.periodico) b.periodico = meta.periodico || "por determinar";
+      }
 
       setProgress(100);
       setProgressLabel("Listo");
@@ -2488,6 +2690,7 @@ export default function SocidaPressApp() {
       return {
         id: t.id,
         page: t.page,
+        periodico: t.periodico ?? "",
         titulo: t.titulo ?? "",
         fecha: t.fecha ?? "",
         hora: t.hora ?? "",
@@ -2495,6 +2698,7 @@ export default function SocidaPressApp() {
         imagenPagina: pi?.fullDataUrl ?? null,
 
         imagenSeleccion: t.cropDataUrl ?? pi?.cropDataUrl ?? null,
+        imagenFoto: t.fotoDataUrl ?? null,
       };
     }),
     imagenes: finalImages.map((i) => ({
@@ -2538,6 +2742,7 @@ export default function SocidaPressApp() {
         const pi = pageImages.find((p) => p.page === t.page);
         return {
           pagina: t.page,
+          periodico: t.periodico ?? "",
           titulo: t.titulo ?? "",
           fecha: t.fecha ?? "",
           hora: t.hora ?? "",
@@ -2548,6 +2753,9 @@ export default function SocidaPressApp() {
           imagenPagina: pi?.fullDataUrl ?? null,
           zona: t.zona ?? 1,
           imagenSeleccion: t.cropDataUrl ?? pi?.cropDataUrl ?? null,
+          // Fotografía propia de esta noticia (si la zona tenía una
+          // fotografía separada del texto).
+          imagenFoto: t.fotoDataUrl ?? null,
         };
       }),
       imagenes: finalImages.map((i) => ({
@@ -2831,15 +3039,35 @@ export default function SocidaPressApp() {
                             Página {b.page}
                             {b.zona ? ` · zona ${b.zona}` : ""}
                           </p>
-                          {b.cropDataUrl && (
-                            <a href={b.cropDataUrl} target="_blank" rel="noreferrer">
+                          {/* Foto propia de esta noticia (si la zona tenía una
+                              fotografía separada del texto): así se ve la
+                              foto 1 emparejada con el texto 1, la foto 2 con
+                              el texto 2, etc., en vez de una lista de
+                              imágenes suelta de toda la página. */}
+                          {b.fotoDataUrl && (
+                            <a href={b.fotoDataUrl} target="_blank" rel="noreferrer">
                               <img
-                                src={b.cropDataUrl}
-                                alt={`Zona ${b.zona} de la página ${b.page}`}
+                                src={b.fotoDataUrl}
+                                alt={`Foto de la zona ${b.zona} de la página ${b.page}`}
                                 loading="lazy"
                                 className="max-h-56 w-full rounded-md border object-contain"
                               />
                             </a>
+                          )}
+                          {b.cropDataUrl && (
+                            <details className="rounded-md border">
+                              <summary className="cursor-pointer px-2 py-1 text-xs text-muted-foreground">
+                                Ver recorte completo de la zona
+                              </summary>
+                              <a href={b.cropDataUrl} target="_blank" rel="noreferrer">
+                                <img
+                                  src={b.cropDataUrl}
+                                  alt={`Zona ${b.zona} de la página ${b.page}`}
+                                  loading="lazy"
+                                  className="max-h-56 w-full rounded-md object-contain"
+                                />
+                              </a>
+                            </details>
                           )}
 
                           <Input
@@ -2853,7 +3081,18 @@ export default function SocidaPressApp() {
                             }}
                             className="font-semibold"
                           />
-                          <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <Input
+                              type="text"
+                              value={b.periodico ?? ""}
+                              placeholder="Periódico (opcional)"
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setTextBlocks((prev) =>
+                                  prev.map((x) => (x.id === b.id ? { ...x, periodico: v } : x)),
+                                );
+                              }}
+                            />
                             <Input
                               type="text"
                               value={b.fecha ?? ""}
