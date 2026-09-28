@@ -2956,17 +2956,24 @@ export default function SocidaPressApp() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
+      <header className="sticky top-0 z-20 border-b bg-card">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-6 py-5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Newspaper className="h-5 w-5" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold tracking-tight">SocidaPress</h1>
-            <p className="text-xs text-muted-foreground">
-              Importa noticias en PDF, extrae imágenes y texto por OCR
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="flex flex-1 items-center gap-3 rounded-md text-left transition hover:opacity-80"
+            title="Volver al inicio"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Newspaper className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">SocidaPress</h1>
+              <p className="text-xs text-muted-foreground">
+                Importa noticias en PDF, extrae imágenes y texto por OCR
+              </p>
+            </div>
+          </button>
           <Button
             variant={stage === "library" ? "default" : "outline"}
             size="sm"
