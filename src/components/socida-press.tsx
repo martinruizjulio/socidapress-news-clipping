@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +34,8 @@ import {
   Save,
   ArrowLeft,
   Pencil,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 
 // Tipos internos
@@ -102,6 +105,9 @@ export interface SavedNoticia {
   hora: string;
   bloques: SavedBlock[];
   imagenes: { id: string; dataUrl: string; ancho: number; alto: number }[];
+  // Marcada a mano por quien revisa: indica que esta noticia ya no
+  // necesita más cambios. No se deduce de nada, es una decisión propia.
+  terminado?: boolean;
 }
 
 const STORAGE_KEY = "socidapress:noticias";
@@ -913,6 +919,57 @@ function RegionPicker({
   );
 }
 
+// Una noticia se considera "editada" si se ha guardado algún cambio
+// después de crearla (updatedAt se adelanta a createdAt al pulsar
+// "Guardar cambios"). No hace falta un campo aparte: se deduce sola. El
+// margen de 1s evita que el propio guardado inicial cuente como edición
+// por el desfase de milisegundos entre createdAt y updatedAt.
+function estaEditada(n: SavedNoticia): boolean {
+  return n.updatedAt - n.createdAt > 1000;
+}
+
+function EstadoNoticiaBadges({
+  noticia,
+  onToggleTerminado,
+}: {
+  noticia: SavedNoticia;
+  // Callback sin argumentos a propósito: en la lista alterna el valor ya
+  // persistido, pero en la vista de edición debe tocar solo el borrador
+  // local (para no perder cambios de texto aún no guardados si se
+  // reordena la lista al persistir "terminado" desde fuera).
+  onToggleTerminado: () => void;
+}) {
+  const editada = estaEditada(noticia);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge variant={editada ? "default" : "outline"} className="gap-1">
+        {editada ? "Editado" : "Sin editar"}
+      </Badge>
+      <Badge
+        variant="outline"
+        onClick={onToggleTerminado}
+        className={`cursor-pointer gap-1 select-none ${
+          noticia.terminado
+            ? "border-green-600 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950 dark:text-green-400"
+            : "text-muted-foreground hover:bg-muted"
+        }`}
+        title={
+          noticia.terminado
+            ? "Marcada como terminada. Pulsa para desmarcar."
+            : "Pulsa para marcar como terminada"
+        }
+      >
+        {noticia.terminado ? (
+          <CheckCircle2 className="h-3.5 w-3.5" />
+        ) : (
+          <Circle className="h-3.5 w-3.5" />
+        )}
+        Terminado
+      </Badge>
+    </div>
+  );
+}
+
 // Menú de descarga de una noticia guardada (y sus bloques) en distintos
 // formatos. Reutilizado tanto en la lista de la biblioteca como en la
 // vista de edición (donde exporta lo que se esté editando en ese momento,
@@ -968,6 +1025,7 @@ interface LibraryViewProps {
   onEdit: (id: string | null) => void;
   onDelete: (id: string) => void;
   onUpdate: (n: SavedNoticia) => void;
+  onToggleTerminado: (id: string) => void;
   onNew: () => void;
 }
 
@@ -977,6 +1035,7 @@ function LibraryView({
   highlightIds,
   onEdit,
   onDelete,
+  onToggleTerminado,
   onUpdate,
   onNew,
 }: LibraryViewProps) {
@@ -1019,6 +1078,10 @@ function LibraryView({
               Volver
             </Button>
             <CardTitle>Editar noticia</CardTitle>
+            <EstadoNoticiaBadges
+              noticia={draft}
+              onToggleTerminado={() => setDraft({ ...draft, terminado: !draft.terminado })}
+            />
           </div>
           <div className="flex gap-2">
             <ExportMenu noticia={draft} />
@@ -1232,16 +1295,20 @@ function LibraryView({
                     <Newspaper className="h-6 w-6" />
                   </div>
                 )}
-                <div className="flex-1">
+                <div className="flex-1 space-y-1.5">
                   <h3 className="font-semibold">{n.titulo || "(sin título)"}</h3>
                   <p className="text-xs text-muted-foreground">
                     {n.periodico} · {n.fecha || "fecha por determinar"} ·{" "}
                     {n.hora || "hora por determinar"}
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {n.bloques.length} bloque(s) · guardada el{" "}
                     {new Date(n.updatedAt).toLocaleString("es-ES")}
                   </p>
+                  <EstadoNoticiaBadges
+                    noticia={n}
+                    onToggleTerminado={() => onToggleTerminado(n.id)}
+                  />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -2830,6 +2897,12 @@ export default function SocidaPressApp() {
   const updateNoticia = (updated: SavedNoticia) => {
     persist(saved.map((n) => (n.id === updated.id ? { ...updated, updatedAt: Date.now() } : n)));
   };
+  // Marcar/desmarcar "Terminado" es una decisión de revisión, no una
+  // edición del contenido: a propósito no toca updatedAt, para que la
+  // etiqueta "Editado" siga reflejando solo cambios reales del texto.
+  const toggleTerminado = (id: string) => {
+    persist(saved.map((n) => (n.id === id ? { ...n, terminado: !n.terminado } : n)));
+  };
 
   const handleExport = () => {
     const payload = {
@@ -3355,6 +3428,7 @@ export default function SocidaPressApp() {
             onEdit={setEditingId}
             onDelete={deleteNoticia}
             onUpdate={updateNoticia}
+            onToggleTerminado={toggleTerminado}
             onNew={handleReset}
           />
         )}
