@@ -1069,48 +1069,62 @@ function LibraryView({
                     <Input value={String(b.page)} disabled />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Texto</Label>
-                  <Textarea
-                    rows={8}
-                    value={b.texto}
-                    onChange={(e) => updateBlock(b.id, { texto: e.target.value })}
-                  />
-                </div>
-                {b.imagenFoto && (
-                  <a href={b.imagenFoto} target="_blank" rel="noreferrer">
-                    <img
-                      src={b.imagenFoto}
-                      alt={`Foto de la noticia, página ${b.page}`}
-                      loading="lazy"
-                      className="w-full rounded border"
-                    />
-                  </a>
-                )}
-                {(b.imagenPagina || b.imagenSeleccion) && (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {b.imagenPagina && (
-                      <a href={b.imagenPagina} target="_blank" rel="noreferrer">
+                {/* La imagen con el texto y el campo de texto van juntos y
+                    grandes: quien edita necesita comparar el original con
+                    el texto reconocido con comodidad, no un hueco minúsculo
+                    al final del formulario. */}
+                <div className="grid gap-4 md:grid-cols-2 md:items-start">
+                  <div className="space-y-3">
+                    {(b.imagenSeleccion || b.imagenPagina) && (
+                      <a
+                        href={b.imagenSeleccion ?? b.imagenPagina ?? ""}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         <img
-                          src={b.imagenPagina}
-                          alt={`Página ${b.page}`}
+                          src={b.imagenSeleccion ?? b.imagenPagina ?? ""}
+                          alt={`Recorte con el texto, página ${b.page}`}
                           loading="lazy"
                           className="w-full rounded border"
                         />
                       </a>
                     )}
-                    {b.imagenSeleccion && (
-                      <a href={b.imagenSeleccion} target="_blank" rel="noreferrer">
+                    {b.imagenFoto && (
+                      <a href={b.imagenFoto} target="_blank" rel="noreferrer">
                         <img
-                          src={b.imagenSeleccion}
-                          alt={`Selección página ${b.page}`}
+                          src={b.imagenFoto}
+                          alt={`Foto de la noticia, página ${b.page}`}
                           loading="lazy"
                           className="w-full rounded border"
                         />
                       </a>
+                    )}
+                    {b.imagenSeleccion && b.imagenPagina && (
+                      <details className="rounded-md border">
+                        <summary className="cursor-pointer px-2 py-1 text-xs text-muted-foreground">
+                          Ver página completa de origen
+                        </summary>
+                        <a href={b.imagenPagina} target="_blank" rel="noreferrer">
+                          <img
+                            src={b.imagenPagina}
+                            alt={`Página ${b.page}`}
+                            loading="lazy"
+                            className="w-full rounded object-contain"
+                          />
+                        </a>
+                      </details>
                     )}
                   </div>
-                )}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Texto</Label>
+                    <Textarea
+                      rows={24}
+                      value={b.texto}
+                      onChange={(e) => updateBlock(b.id, { texto: e.target.value })}
+                      className="min-h-[420px] text-sm leading-relaxed"
+                    />
+                  </div>
+                </div>
                 <div className="flex justify-end">
                   <Button
                     variant="ghost"
