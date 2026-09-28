@@ -21,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { exportarNoticia, type FormatoExportacion } from "@/lib/noticia-export";
 import { toast } from "sonner";
 import {
@@ -919,6 +920,37 @@ function RegionPicker({
   );
 }
 
+// Miniatura clicable que amplía la imagen en un diálogo dentro de la
+// propia app. Antes se abría con <a target="_blank">, pero un data URL
+// de varios MB (una página o un recorte a resolución alta) no siempre
+// se renderiza al abrirlo en una pestaña nueva: el navegador puede
+// quedarse con la pantalla en negro. Mostrarla en un <img> dentro de un
+// Dialog evita ese problema porque nunca sale de la página ya cargada.
+function ImagenAmpliable({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [abierta, setAbierta] = useState(false);
+  return (
+    <Dialog open={abierta} onOpenChange={setAbierta}>
+      <DialogTrigger asChild>
+        <button type="button" className="block w-full cursor-zoom-in" title="Ampliar imagen">
+          <img src={src} alt={alt} loading="lazy" className={className} />
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-[95vw] overflow-auto p-2 sm:max-w-4xl">
+        <DialogTitle className="sr-only">{alt}</DialogTitle>
+        <img src={src} alt={alt} className="max-h-[85vh] w-full object-contain" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Una noticia se considera "editada" si se ha guardado algún cambio
 // después de crearla (updatedAt se adelanta a createdAt al pulsar
 // "Guardar cambios"). No hace falta un campo aparte: se deduce sola. El
@@ -1192,42 +1224,29 @@ function LibraryView({
                 <div className="grid gap-4 md:grid-cols-2 md:items-start">
                   <div className="space-y-3">
                     {(b.imagenSeleccion || b.imagenPagina) && (
-                      <a
-                        href={b.imagenSeleccion ?? b.imagenPagina ?? ""}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <img
-                          src={b.imagenSeleccion ?? b.imagenPagina ?? ""}
-                          alt={`Recorte con el texto, página ${b.page}`}
-                          loading="lazy"
-                          className="w-full rounded border"
-                        />
-                      </a>
+                      <ImagenAmpliable
+                        src={b.imagenSeleccion ?? b.imagenPagina ?? ""}
+                        alt={`Recorte con el texto, página ${b.page}`}
+                        className="w-full rounded border"
+                      />
                     )}
                     {b.imagenFoto && (
-                      <a href={b.imagenFoto} target="_blank" rel="noreferrer">
-                        <img
-                          src={b.imagenFoto}
-                          alt={`Foto de la noticia, página ${b.page}`}
-                          loading="lazy"
-                          className="w-full rounded border"
-                        />
-                      </a>
+                      <ImagenAmpliable
+                        src={b.imagenFoto}
+                        alt={`Foto de la noticia, página ${b.page}`}
+                        className="w-full rounded border"
+                      />
                     )}
                     {b.imagenSeleccion && b.imagenPagina && (
                       <details className="rounded-md border">
                         <summary className="cursor-pointer px-2 py-1 text-xs text-muted-foreground">
                           Ver página completa de origen
                         </summary>
-                        <a href={b.imagenPagina} target="_blank" rel="noreferrer">
-                          <img
-                            src={b.imagenPagina}
-                            alt={`Página ${b.page}`}
-                            loading="lazy"
-                            className="w-full rounded object-contain"
-                          />
-                        </a>
+                        <ImagenAmpliable
+                          src={b.imagenPagina}
+                          alt={`Página ${b.page}`}
+                          className="w-full rounded object-contain"
+                        />
                       </details>
                     )}
                   </div>
@@ -2518,14 +2537,45 @@ export default function SocidaPressApp() {
         // entre columnas debe estar casi vacío durante casi todo el bloque.
         const huecoMin = Math.max(6, Math.round(w * 0.015));
         const anchoColMin = Math.max(20, Math.round(w * 0.08));
+
+        // Algunos bloques no son un párrafo del artículo, sino un
+        // elemento gráfico aislado (un marcador "5-0", una cita
+        // destacada en un recuadro): son cortos (pocas líneas) Y más
+        // estrechos que el ancho de la zona (suelen ir recuadrados con
+        // margen a los lados), a diferencia de un párrafo normal que
+        // ocupa el ancho de su columna de punta a punta. Los tratamos
+        // igual (mismo OCR y misma división en columnas si la tuvieran),
+        // pero los apartamos del cuerpo principal y los colocamos al
+        // final, para no cortar el artículo a mitad de frase con un
+        // recuadro que no pertenece ahí.
+        const esBloqueAparte = (bloque: { y0: number; y1: number }): boolean => {
+          const altoBloque = bloque.y1 - bloque.y0;
+          if (altoBloque > alturaLinea * 3.2) return false;
+          let xMin = w;
+          let xMax = 0;
+          for (let x = 0; x < w; x++) {
+            for (let yy = bloque.y0; yy < bloque.y1; yy++) {
+              if (gris[yy * w + x] < p40) {
+                if (x < xMin) xMin = x;
+                if (x > xMax) xMax = x;
+                break;
+              }
+            }
+          }
+          if (xMax <= xMin) return false;
+          return xMax - xMin < w * 0.65;
+        };
+
         // Guardamos también el índice de columna (0=izda, 1=siguiente...) y
         // la altura del bloque, para poder ordenar al final por COLUMNA
         // primero y no por bloque: si no, leeríamos "izda del párrafo 1,
         // derecha del párrafo 1, izda del párrafo 2..." en vez de toda la
         // columna izquierda seguida de toda la derecha.
         const piezas: { canvas: HTMLCanvasElement; columna: number; y0: number }[] = [];
+        const piezasAparte: { canvas: HTMLCanvasElement; y0: number }[] = [];
         for (const bloque of bloques) {
           const altoBloque = bloque.y1 - bloque.y0;
+          const aparte = esBloqueAparte(bloque);
           const cobertura = new Float64Array(w);
           for (let yy = bloque.y0; yy < bloque.y1; yy++) {
             for (let x = 0; x < w; x++) {
@@ -2573,15 +2623,22 @@ export default function SocidaPressApp() {
                 altoBloque,
               );
             }
-            piezas.push({ canvas: c, columna, y0: bloque.y0 });
+            if (aparte) {
+              piezasAparte.push({ canvas: c, y0: bloque.y0 });
+            } else {
+              piezas.push({ canvas: c, columna, y0: bloque.y0 });
+            }
           });
         }
-        if (!piezas.length) return [canvas];
+        if (!piezas.length && !piezasAparte.length) return [canvas];
         // Ordenamos por COLUMNA primero y por altura después: así se lee
         // toda la columna izquierda de arriba abajo y luego toda la
-        // derecha, en vez de alternar entre columnas bloque a bloque.
+        // derecha, en vez de alternar entre columnas bloque a bloque. Los
+        // recuadros apartados van siempre al final, en su propio orden
+        // vertical, para no interrumpir la lectura del cuerpo principal.
         piezas.sort((a, b) => a.columna - b.columna || a.y0 - b.y0);
-        return piezas.map((p) => p.canvas);
+        piezasAparte.sort((a, b) => a.y0 - b.y0);
+        return [...piezas.map((p) => p.canvas), ...piezasAparte.map((p) => p.canvas)];
       };
 
       // Además de las zonas que marca el usuario, intentamos leer por OCR
