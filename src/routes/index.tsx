@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 import { Toaster } from "sonner";
+import { AuthGate } from "@/components/auth-gate";
 
 const SocidaPressApp = lazy(() => import("@/components/socida-press"));
 
@@ -46,7 +47,9 @@ function Index() {
               </div>
             }
           >
-            <SocidaPressApp />
+            <AuthGate>
+              <SocidaPressApp />
+            </AuthGate>
           </Suspense>
         )}
       </ClientOnly>
