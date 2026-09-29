@@ -38,6 +38,8 @@ import {
   CheckCircle2,
   Circle,
   Copy,
+  FileText,
+  Instagram,
 } from "lucide-react";
 
 // Tipos internos
@@ -3144,7 +3146,7 @@ export default function SocidaPressApp() {
             <CardHeader>
               <CardTitle>Nueva noticia</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="pdf">Archivo PDF de la noticia</Label>
                 <div
@@ -3177,13 +3179,13 @@ export default function SocidaPressApp() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
                   }}
-                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-10 text-center transition-colors ${
+                  className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed px-6 py-5 text-center transition-colors ${
                     arrastrandoPdf
                       ? "border-primary bg-primary/5"
                       : "border-muted-foreground/30 hover:border-muted-foreground/50"
                   }`}
                 >
-                  <FileUp className="h-6 w-6 text-muted-foreground" />
+                  <FileText className="h-5 w-5 text-muted-foreground" />
                   {file ? (
                     <p className="text-sm font-medium">
                       {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
@@ -3216,7 +3218,7 @@ export default function SocidaPressApp() {
                 <div className="h-px flex-1 bg-border" />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="captura">Captura de pantalla (Instagram u otra red social)</Label>
                 <div
                   onDragOver={(e) => {
@@ -3242,7 +3244,7 @@ export default function SocidaPressApp() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") capturaInputRef.current?.click();
                   }}
-                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-8 text-center transition-colors ${
+                  className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed px-6 py-5 text-center transition-colors ${
                     arrastrandoCaptura
                       ? "border-primary bg-primary/5"
                       : "border-muted-foreground/30 hover:border-muted-foreground/50"
@@ -3250,12 +3252,12 @@ export default function SocidaPressApp() {
                 >
                   {convirtiendoCaptura ? (
                     <>
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">Preparando la captura…</p>
                     </>
                   ) : (
                     <>
-                      <FileUp className="h-6 w-6 text-muted-foreground" />
+                      <Instagram className="h-5 w-5 text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
                         Arrastra aquí una captura de pantalla (PNG/JPG), o haz clic para elegirla
                       </p>
