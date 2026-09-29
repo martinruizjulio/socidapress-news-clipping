@@ -1399,6 +1399,7 @@ export default function SocidaPressApp() {
     hora: "",
   });
   const [file, setFile] = useState<File | null>(null);
+  const [arrastrandoPdf, setArrastrandoPdf] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const [images, setImages] = useState<ExtractedImage[]>([]);
@@ -3093,18 +3094,62 @@ export default function SocidaPressApp() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="pdf">Archivo PDF de la noticia</Label>
-                <Input
-                  id="pdf"
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-                {file && (
-                  <p className="text-xs text-muted-foreground">
-                    Seleccionado: {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                  </p>
-                )}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setArrastrandoPdf(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setArrastrandoPdf(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setArrastrandoPdf(false);
+                    const dropped = Array.from(e.dataTransfer.files).find(
+                      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"),
+                    );
+                    if (dropped) {
+                      setFile(dropped);
+                    } else if (e.dataTransfer.files.length) {
+                      toast.error("Solo se admiten archivos PDF.");
+                    }
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
+                  }}
+                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-10 text-center transition-colors ${
+                    arrastrandoPdf
+                      ? "border-primary bg-primary/5"
+                      : "border-muted-foreground/30 hover:border-muted-foreground/50"
+                  }`}
+                >
+                  <FileUp className="h-6 w-6 text-muted-foreground" />
+                  {file ? (
+                    <p className="text-sm font-medium">
+                      {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Arrastra aquí el PDF, o haz clic para elegirlo
+                    </p>
+                  )}
+                  <Input
+                    id="pdf"
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    className="hidden"
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Sube el PDF y en el siguiente paso podrás marcar sobre cada página la zona exacta
                   que quieres escanear (opcional). Después SocidaPress detectará automáticamente el
