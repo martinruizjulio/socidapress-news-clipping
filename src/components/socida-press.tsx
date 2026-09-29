@@ -1400,6 +1400,8 @@ export default function SocidaPressApp() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [arrastrandoPdf, setArrastrandoPdf] = useState(false);
+  const [arrastrandoCaptura, setArrastrandoCaptura] = useState(false);
+  const [convirtiendoCaptura, setConvirtiendoCaptura] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const [images, setImages] = useState<ExtractedImage[]>([]);
@@ -1412,6 +1414,57 @@ export default function SocidaPressApp() {
   const [rotations, setRotations] = useState<Record<number, number>>({});
   const pdfRef = useRef<unknown>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const capturaInputRef = useRef<HTMLInputElement>(null);
+
+  // Convierte una captura de pantalla (imagen) en un PDF de una sola
+  // página del mismo tamaño, y la deja como si fuera el PDF subido: así
+  // reutiliza sin cambios todo el resto del proceso (marcar zona, OCR,
+  // separación de foto/texto), que ya sabe leer perfectamente PDFs de
+  // una foto (es justo lo que generan apps como Adobe Scan o CamScanner).
+  const handleCapturaFile = useCallback(async (imgFile: File) => {
+    if (!imgFile.type.startsWith("image/")) {
+      toast.error("Solo se admiten imágenes (una captura de pantalla).");
+      return;
+    }
+    setConvirtiendoCaptura(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el archivo"));
+        reader.readAsDataURL(imgFile);
+      });
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("No se pudo leer la imagen"));
+        el.src = dataUrl;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const cctx = canvas.getContext("2d");
+      if (!cctx) throw new Error("No se pudo preparar la imagen");
+      cctx.drawImage(img, 0, 0);
+      const pngDataUrl = canvas.toDataURL("image/png");
+
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "px", format: [canvas.width, canvas.height] });
+      doc.addImage(pngDataUrl, "PNG", 0, 0, canvas.width, canvas.height);
+      const blob = doc.output("blob");
+      const pdfFile = new File(
+        [blob],
+        `${imgFile.name.replace(/\.\w+$/, "") || "captura"}.pdf`,
+        { type: "application/pdf" },
+      );
+      setFile(pdfFile);
+      toast.success("Captura lista. Pulsa Continuar para marcar la zona.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo procesar la captura.");
+    } finally {
+      setConvirtiendoCaptura(false);
+    }
+  }, []);
 
   // Biblioteca persistente en localStorage
   const [saved, setSaved] = useState<SavedNoticia[]>([]);
@@ -3154,6 +3207,85 @@ export default function SocidaPressApp() {
                   Sube el PDF y en el siguiente paso podrás marcar sobre cada página la zona exacta
                   que quieres escanear (opcional). Después SocidaPress detectará automáticamente el
                   periódico, el título, la fecha y la hora.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                O
+                <div className="h-px flex-1 bg-border" />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="captura">Captura de pantalla (Instagram u otra red social)</Label>
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setArrastrandoCaptura(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setArrastrandoCaptura(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setArrastrandoCaptura(false);
+                    const dropped = e.dataTransfer.files[0];
+                    if (dropped) void handleCapturaFile(dropped);
+                  }}
+                  onClick={() => !convirtiendoCaptura && capturaInputRef.current?.click()}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") capturaInputRef.current?.click();
+                  }}
+                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-8 text-center transition-colors ${
+                    arrastrandoCaptura
+                      ? "border-primary bg-primary/5"
+                      : "border-muted-foreground/30 hover:border-muted-foreground/50"
+                  }`}
+                >
+                  {convirtiendoCaptura ? (
+                    <>
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Preparando la captura…</p>
+                    </>
+                  ) : (
+                    <>
+                      <FileUp className="h-6 w-6 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Arrastra aquí una captura de pantalla (PNG/JPG), o haz clic para elegirla
+                      </p>
+                    </>
+                  )}
+                  <Input
+                    id="captura"
+                    ref={capturaInputRef}
+                    type="file"
+                    accept="image/*"
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void handleCapturaFile(f);
+                      e.target.value = "";
+                    }}
+                    className="hidden"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Haz la captura de la noticia en Instagram (o donde sea) y arrástrala aquí: se
+                  procesa igual que un PDF, con la misma selección de zona, OCR y separación de foto
+                  y texto.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  <strong>En Windows:</strong> pulsa <kbd className="rounded border px-1">Win</kbd> +{" "}
+                  <kbd className="rounded border px-1">Mayús</kbd> +{" "}
+                  <kbd className="rounded border px-1">S</kbd> y recorta la noticia. Al soltar el
+                  ratón aparece una miniatura en la esquina inferior derecha: arrástrala
+                  directamente aquí, sin necesidad de abrir ninguna carpeta.
                 </p>
               </div>
 
