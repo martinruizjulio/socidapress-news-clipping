@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { requestLoginCode, verifyLoginCode } from "@/lib/login.functions";
 
 type Estado = "cargando" | "sin-sesion" | "no-autorizado" | "ok";
 
@@ -57,30 +58,33 @@ function Login({ noAutorizado }: { noAutorizado: boolean }) {
     e.preventDefault();
     setError(null);
     setOcupado(true);
-    const correo = email.trim().toLowerCase();
-    const { data: autorizado } = await supabase.rpc("is_email_authorized", { _email: correo });
-    if (!autorizado) {
-      setError("Tu correo no tiene acceso todavía. Contacta con el administrador.");
-      setOcupado(false);
-      return;
+    try {
+      const r = await requestLoginCode({ data: { email: email.trim().toLowerCase() } });
+      if (r.ok) setPaso("codigo");
+      else if (r.error === "no-autorizado") setError("Tu correo no tiene acceso todavía. Contacta con el administrador.");
+      else setError("No se pudo enviar el código. Inténtalo de nuevo en unos minutos.");
+    } catch {
+      setError("No se pudo enviar el código. Inténtalo de nuevo en unos minutos.");
     }
-    const { error } = await supabase.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
     setOcupado(false);
-    if (error) setError("No se pudo enviar el código. Inténtalo de nuevo en unos minutos.");
-    else setPaso("codigo");
   };
 
   const verificar = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setOcupado(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: codigo.trim(),
-      type: "email",
-    });
+    try {
+      const r = await verifyLoginCode({ data: { email: email.trim().toLowerCase(), code: codigo.trim() } });
+      if (!r.ok) {
+        setError(r.error === "no-autorizado" ? "Tu correo no tiene acceso todavía." : "Código incorrecto o caducado.");
+      } else {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: r.tokenHash, type: "magiclink" });
+        if (error) setError("No se pudo abrir la sesión. Pide un código nuevo.");
+      }
+    } catch {
+      setError("Código incorrecto o caducado.");
+    }
     setOcupado(false);
-    if (error) setError("Código incorrecto o caducado.");
   };
 
   return (
