@@ -109,22 +109,22 @@ type Stage = "form" | "region" | "processing" | "select" | "done" | "library";
 // Disciplinas disponibles para etiquetar cada bloque (foto + texto). Lista
 // cerrada, igual en la pantalla de revisión y en la edición posterior.
 const DEPORTES_OPCIONES = [
+  "Bádminton dobles y mixtos",
   "Bádminton individual",
-  "Esgrima individual",
-  "Tenis individual",
-  "Tenis mesa individual",
   "Boxeo individual",
+  "Esgrima individual",
+  "Esgrima silla de ruedas",
   "Judo individual",
+  "Judo paralímpico",
   "Lucha libre olímpica individual",
   "Taekwondo individual",
-  "Bádminton dobles y mixtos",
-  "Tenis dobles y mixtos",
-  "Tenis mesa dobles y mixtos",
-  "Tenis silla de ruedas individual",
-  "Tenis mesa paralímpico individual",
-  "Judo paralímpico",
-  "Esgrima silla de ruedas",
   "Taekwondo paralímpico",
+  "Tenis dobles y mixtos",
+  "Tenis individual",
+  "Tenis mesa dobles y mixtos",
+  "Tenis mesa individual",
+  "Tenis mesa paralímpico individual",
+  "Tenis silla de ruedas individual",
 ] as const;
 
 // Si el texto del bloque es una noticia redactada por un periodista o un
@@ -1692,100 +1692,107 @@ function LibraryView({
           </p>
         ) : (
           <>
-            <div className="mb-4 flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 p-3">
-              <div className="space-y-1">
-                <Label htmlFor="filtro-fecha-desde" className="text-xs">
-                  Desde
-                </Label>
-                <Input
-                  id="filtro-fecha-desde"
-                  type="date"
-                  value={filtroFechaDesde}
-                  onChange={(e) => setFiltroFechaDesde(e.target.value)}
-                  className="h-8 w-36"
-                />
+            <div className="mb-4 space-y-3 rounded-md border bg-muted/30 p-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="filtro-fecha-desde" className="text-xs">
+                    Desde
+                  </Label>
+                  <Input
+                    id="filtro-fecha-desde"
+                    type="date"
+                    value={filtroFechaDesde}
+                    onChange={(e) => setFiltroFechaDesde(e.target.value)}
+                    className="h-8 w-36"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="filtro-fecha-hasta" className="text-xs">
+                    Hasta
+                  </Label>
+                  <Input
+                    id="filtro-fecha-hasta"
+                    type="date"
+                    value={filtroFechaHasta}
+                    onChange={(e) => setFiltroFechaHasta(e.target.value)}
+                    className="h-8 w-36"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Editado</Label>
+                  <Select
+                    value={filtroEditado}
+                    onValueChange={(v) => setFiltroEditado(v as typeof filtroEditado)}
+                  >
+                    <SelectTrigger className="h-8 w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="si">Editado</SelectItem>
+                      <SelectItem value="no">Sin editar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Terminado</Label>
+                  <Select
+                    value={filtroTerminado}
+                    onValueChange={(v) => setFiltroTerminado(v as typeof filtroTerminado)}
+                  >
+                    <SelectTrigger className="h-8 w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="si">Terminado</SelectItem>
+                      <SelectItem value="no">Sin terminar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="filtro-fecha-hasta" className="text-xs">
-                  Hasta
-                </Label>
-                <Input
-                  id="filtro-fecha-hasta"
-                  type="date"
-                  value={filtroFechaHasta}
-                  onChange={(e) => setFiltroFechaHasta(e.target.value)}
-                  className="h-8 w-36"
-                />
+              <div className="flex flex-wrap items-end justify-center gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Editado por</Label>
+                  <Select value={filtroPersona} onValueChange={setFiltroPersona}>
+                    <SelectTrigger className="h-8 w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      {personas.map((p) => (
+                        <SelectItem key={p.email} value={p.email}>
+                          {nombrePersona(p.email, personas)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Deporte</Label>
+                  <Select value={filtroDeporte} onValueChange={setFiltroDeporte}>
+                    <SelectTrigger className="h-8 w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      {DEPORTES_OPCIONES.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {hayFiltrosActivos && (
+                  <Button variant="ghost" size="sm" onClick={limpiarFiltros} className="h-8">
+                    Quitar filtros
+                  </Button>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {noticiasFiltradas.length} de {noticiasOrdenadas.length} noticia(s)
+                </span>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Editado</Label>
-                <Select value={filtroEditado} onValueChange={(v) => setFiltroEditado(v as typeof filtroEditado)}>
-                  <SelectTrigger className="h-8 w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas</SelectItem>
-                    <SelectItem value="si">Editado</SelectItem>
-                    <SelectItem value="no">Sin editar</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Terminado</Label>
-                <Select
-                  value={filtroTerminado}
-                  onValueChange={(v) => setFiltroTerminado(v as typeof filtroTerminado)}
-                >
-                  <SelectTrigger className="h-8 w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas</SelectItem>
-                    <SelectItem value="si">Terminado</SelectItem>
-                    <SelectItem value="no">Sin terminar</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Editado por</Label>
-                <Select value={filtroPersona} onValueChange={setFiltroPersona}>
-                  <SelectTrigger className="h-8 w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas</SelectItem>
-                    {personas.map((p) => (
-                      <SelectItem key={p.email} value={p.email}>
-                        {nombrePersona(p.email, personas)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Deporte</Label>
-                <Select value={filtroDeporte} onValueChange={setFiltroDeporte}>
-                  <SelectTrigger className="h-8 w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas</SelectItem>
-                    {DEPORTES_OPCIONES.map((d) => (
-                      <SelectItem key={d} value={d}>
-                        {d}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {hayFiltrosActivos && (
-                <Button variant="ghost" size="sm" onClick={limpiarFiltros} className="h-8">
-                  Quitar filtros
-                </Button>
-              )}
-              <span className="text-xs text-muted-foreground">
-                {noticiasFiltradas.length} de {noticiasOrdenadas.length} noticia(s)
-              </span>
             </div>
             {noticiasFiltradas.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
