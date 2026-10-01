@@ -83,6 +83,11 @@ interface ExtractedTextBlock {
   fecha?: string;
   hora?: string;
   text: string;
+  // Disciplina deportiva de la noticia (lista cerrada, DEPORTES_OPCIONES).
+  deporte?: string;
+  // Si el texto es una noticia de prensa o un escrito propio del
+  // protagonista (columna, carta, testimonio...).
+  tipoTexto?: TipoTexto;
   // Recorte mejorado (redimensionado + ajuste de luz/color) de la zona
   // completa (foto + texto), tal y como la marcó el usuario.
   cropDataUrl?: string;
@@ -101,6 +106,37 @@ interface Metadata {
 
 type Stage = "form" | "region" | "processing" | "select" | "done" | "library";
 
+// Disciplinas disponibles para etiquetar cada bloque (foto + texto). Lista
+// cerrada, igual en la pantalla de revisión y en la edición posterior.
+const DEPORTES_OPCIONES = [
+  "Bádminton individual",
+  "Esgrima individual",
+  "Tenis individual",
+  "Tenis mesa individual",
+  "Boxeo individual",
+  "Judo individual",
+  "Lucha libre olímpica individual",
+  "Taekwondo individual",
+  "Bádminton dobles y mixtos",
+  "Tenis dobles y mixtos",
+  "Tenis mesa dobles y mixtos",
+  "Tenis silla de ruedas individual",
+  "Tenis mesa paralímpico individual",
+  "Judo paralímpico",
+  "Esgrima silla de ruedas",
+  "Taekwondo paralímpico",
+] as const;
+
+// Si el texto del bloque es una noticia redactada por un periodista o un
+// escrito en primera persona del propio protagonista (columna, carta,
+// testimonio...).
+type TipoTexto = "noticia" | "escrito-propio";
+
+// Radix Select no admite SelectItem con value="", así que el "sin
+// especificar" de deporte/tipo de texto usa este valor interno y se
+// traduce a undefined al guardar.
+const SIN_ESPECIFICAR = "__sin_especificar__";
+
 // Noticia guardada persistente (localStorage). Contiene todo lo necesario
 // para mostrarla y editarla más tarde sin volver a procesar el PDF.
 export interface SavedBlock {
@@ -111,6 +147,11 @@ export interface SavedBlock {
   fecha: string;
   hora: string;
   texto: string;
+  // Disciplina deportiva de la noticia (lista cerrada, DEPORTES_OPCIONES).
+  deporte?: string;
+  // Si el texto es una noticia de prensa o un escrito propio del
+  // protagonista (columna, carta, testimonio...).
+  tipoTexto?: TipoTexto;
   imagenPagina?: string | null;
   imagenSeleccion?: string | null;
   // Foto propia del bloque (si la zona tenía una fotografía separada del
@@ -1485,6 +1526,49 @@ function LibraryView({
                   <div className="space-y-1">
                     <Label className="text-xs">Página</Label>
                     <Input value={String(b.page)} disabled />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Deporte</Label>
+                    <Select
+                      value={b.deporte ?? SIN_ESPECIFICAR}
+                      onValueChange={(v) =>
+                        updateBlock(b.id, { deporte: v === SIN_ESPECIFICAR ? undefined : v })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Deporte" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                        {DEPORTES_OPCIONES.map((d) => (
+                          <SelectItem key={d} value={d}>
+                            {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tipo de texto</Label>
+                    <Select
+                      value={b.tipoTexto ?? SIN_ESPECIFICAR}
+                      onValueChange={(v) =>
+                        updateBlock(b.id, {
+                          tipoTexto: v === SIN_ESPECIFICAR ? undefined : (v as TipoTexto),
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tipo de texto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                        <SelectItem value="noticia">Noticia</SelectItem>
+                        <SelectItem value="escrito-propio">
+                          Escrito propio del protagonista
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 {/* La imagen con el texto y el campo de texto van juntos y
@@ -3511,6 +3595,8 @@ export default function SocidaPressApp() {
         fecha: t.fecha || metadata.fecha,
         hora: t.hora || metadata.hora,
         texto: t.text,
+        deporte: t.deporte,
+        tipoTexto: t.tipoTexto,
         imagenPagina: pi?.fullDataUrl ?? null,
         imagenSeleccion: t.cropDataUrl ?? pi?.cropDataUrl ?? null,
         imagenFoto: t.fotoDataUrl ?? null,
@@ -3631,6 +3717,8 @@ export default function SocidaPressApp() {
           titulo: t.titulo ?? "",
           fecha: t.fecha ?? "",
           hora: t.hora ?? "",
+          deporte: t.deporte ?? "",
+          tipoTexto: t.tipoTexto ?? "",
           texto: t.text,
           // Imagen completa de la página de donde sale el bloque y, si el
           // usuario marcó una zona en esa página, el recorte de la selección.
@@ -4132,6 +4220,49 @@ export default function SocidaPressApp() {
                                 );
                               }}
                             />
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <Select
+                              value={b.deporte ?? SIN_ESPECIFICAR}
+                              onValueChange={(v) => {
+                                const deporte = v === SIN_ESPECIFICAR ? undefined : v;
+                                setTextBlocks((prev) =>
+                                  prev.map((x) => (x.id === b.id ? { ...x, deporte } : x)),
+                                );
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Deporte" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                                {DEPORTES_OPCIONES.map((d) => (
+                                  <SelectItem key={d} value={d}>
+                                    {d}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={b.tipoTexto ?? SIN_ESPECIFICAR}
+                              onValueChange={(v) => {
+                                const tipoTexto = v === SIN_ESPECIFICAR ? undefined : (v as TipoTexto);
+                                setTextBlocks((prev) =>
+                                  prev.map((x) => (x.id === b.id ? { ...x, tipoTexto } : x)),
+                                );
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Tipo de texto" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                                <SelectItem value="noticia">Noticia</SelectItem>
+                                <SelectItem value="escrito-propio">
+                                  Escrito propio del protagonista
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
 
                           <div className="flex justify-end">
