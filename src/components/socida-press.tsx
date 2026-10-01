@@ -4530,28 +4530,22 @@ export default function SocidaPressApp() {
                               el texto 2, etc., en vez de una lista de
                               imágenes suelta de toda la página. */}
                           {b.fotoDataUrl && (
-                            <a href={b.fotoDataUrl} target="_blank" rel="noreferrer">
-                              <img
-                                src={b.fotoDataUrl}
-                                alt={`Foto de la zona ${b.zona} de la página ${b.page}`}
-                                loading="lazy"
-                                className="max-h-56 w-full rounded-md border object-contain"
-                              />
-                            </a>
+                            <ImagenAmpliable
+                              src={b.fotoDataUrl}
+                              alt={`Foto de la zona ${b.zona} de la página ${b.page}`}
+                              className="max-h-56 w-full rounded-md border object-contain"
+                            />
                           )}
                           {b.cropDataUrl && (
                             <details className="rounded-md border">
                               <summary className="cursor-pointer px-2 py-1 text-xs text-muted-foreground">
                                 Ver recorte completo de la zona
                               </summary>
-                              <a href={b.cropDataUrl} target="_blank" rel="noreferrer">
-                                <img
-                                  src={b.cropDataUrl}
-                                  alt={`Zona ${b.zona} de la página ${b.page}`}
-                                  loading="lazy"
-                                  className="max-h-56 w-full rounded-md object-contain"
-                                />
-                              </a>
+                              <ImagenAmpliable
+                                src={b.cropDataUrl}
+                                alt={`Zona ${b.zona} de la página ${b.page}`}
+                                className="max-h-56 w-full rounded-md object-contain"
+                              />
                             </details>
                           )}
 
@@ -4828,14 +4822,11 @@ export default function SocidaPressApp() {
                             <div className="grid gap-3 md:grid-cols-2">
                               {pi?.fullDataUrl && (
                                 <figure className="space-y-1">
-                                  <a href={pi.fullDataUrl} target="_blank" rel="noreferrer">
-                                    <img
-                                      src={pi.fullDataUrl}
-                                      alt={`Página ${t.page} completa`}
-                                      loading="lazy"
-                                      className="w-full rounded border"
-                                    />
-                                  </a>
+                                  <ImagenAmpliable
+                                    src={pi.fullDataUrl}
+                                    alt={`Página ${t.page} completa`}
+                                    className="w-full rounded border"
+                                  />
                                   <figcaption className="text-xs text-muted-foreground">
                                     Página completa
                                   </figcaption>
@@ -4843,14 +4834,11 @@ export default function SocidaPressApp() {
                               )}
                               {pi?.cropDataUrl && (
                                 <figure className="space-y-1">
-                                  <a href={pi.cropDataUrl} target="_blank" rel="noreferrer">
-                                    <img
-                                      src={pi.cropDataUrl}
-                                      alt={`Selección de la página ${t.page}`}
-                                      loading="lazy"
-                                      className="w-full rounded border"
-                                    />
-                                  </a>
+                                  <ImagenAmpliable
+                                    src={pi.cropDataUrl}
+                                    alt={`Selección de la página ${t.page}`}
+                                    className="w-full rounded border"
+                                  />
                                   <figcaption className="text-xs text-muted-foreground">
                                     Selección marcada
                                   </figcaption>
