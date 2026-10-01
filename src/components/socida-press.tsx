@@ -1428,30 +1428,30 @@ function FaseIndicador({ actual }: { actual: number }) {
         const activa = f.n === actual;
         return (
           <div key={f.n} className="flex items-center gap-x-2 gap-y-1">
-            <span
-              className={
-                "flex items-center gap-1.5 " +
-                (activa
-                  ? "font-medium text-foreground"
-                  : completada
-                    ? "text-muted-foreground"
-                    : "text-muted-foreground/50")
-              }
-            >
-              {completada ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-              ) : (
-                <span
-                  className={
-                    "flex h-4 w-4 items-center justify-center rounded-full border text-[10px] " +
-                    (activa ? "border-primary text-primary" : "border-muted-foreground/40")
-                  }
-                >
+            {activa ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-rose-400 text-[10px]">
                   {f.n}
                 </span>
-              )}
-              Fase {f.n}. {f.label}
-            </span>
+                Fase {f.n}. {f.label}
+              </span>
+            ) : (
+              <span
+                className={
+                  "flex items-center gap-1.5 " +
+                  (completada ? "text-muted-foreground" : "text-muted-foreground/50")
+                }
+              >
+                {completada ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                ) : (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px]">
+                    {f.n}
+                  </span>
+                )}
+                Fase {f.n}. {f.label}
+              </span>
+            )}
             {i < FASES_APP.length - 1 && (
               <span className="h-px w-8 bg-border sm:w-12" aria-hidden="true" />
             )}
@@ -2018,7 +2018,7 @@ function LibraryView({
         ) : (
           <>
             <div className="mb-4 space-y-3 rounded-md border bg-muted/30 p-3">
-              <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-wrap items-end justify-center gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Periódico</Label>
                   <Select value={filtroPeriodico} onValueChange={setFiltroPeriodico}>
