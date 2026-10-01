@@ -9,38 +9,103 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicVerifyLoginCodeRouteImport } from './routes/api/public/verify-login-code'
+import { Route as ApiPublicRequestLoginCodeRouteImport } from './routes/api/public/request-login-code'
+import { Route as ApiPublicOcrClaudeRouteImport } from './routes/api/public/ocr-claude'
 
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicVerifyLoginCodeRoute =
+  ApiPublicVerifyLoginCodeRouteImport.update({
+    id: '/api/public/verify-login-code',
+    path: '/api/public/verify-login-code',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicRequestLoginCodeRoute =
+  ApiPublicRequestLoginCodeRouteImport.update({
+    id: '/api/public/request-login-code',
+    path: '/api/public/request-login-code',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicOcrClaudeRoute = ApiPublicOcrClaudeRouteImport.update({
+  id: '/api/public/ocr-claude',
+  path: '/api/public/ocr-claude',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/api/public/ocr-claude': typeof ApiPublicOcrClaudeRoute
+  '/api/public/request-login-code': typeof ApiPublicRequestLoginCodeRoute
+  '/api/public/verify-login-code': typeof ApiPublicVerifyLoginCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/api/public/ocr-claude': typeof ApiPublicOcrClaudeRoute
+  '/api/public/request-login-code': typeof ApiPublicRequestLoginCodeRoute
+  '/api/public/verify-login-code': typeof ApiPublicVerifyLoginCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
+  '/api/public/ocr-claude': typeof ApiPublicOcrClaudeRoute
+  '/api/public/request-login-code': typeof ApiPublicRequestLoginCodeRoute
+  '/api/public/verify-login-code': typeof ApiPublicVerifyLoginCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/api/public/ocr-claude'
+    | '/api/public/request-login-code'
+    | '/api/public/verify-login-code'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/admin'
+    | '/api/public/ocr-claude'
+    | '/api/public/request-login-code'
+    | '/api/public/verify-login-code'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/api/public/ocr-claude'
+    | '/api/public/request-login-code'
+    | '/api/public/verify-login-code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
+  ApiPublicOcrClaudeRoute: typeof ApiPublicOcrClaudeRoute
+  ApiPublicRequestLoginCodeRoute: typeof ApiPublicRequestLoginCodeRoute
+  ApiPublicVerifyLoginCodeRoute: typeof ApiPublicVerifyLoginCodeRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +113,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/verify-login-code': {
+      id: '/api/public/verify-login-code'
+      path: '/api/public/verify-login-code'
+      fullPath: '/api/public/verify-login-code'
+      preLoaderRoute: typeof ApiPublicVerifyLoginCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/request-login-code': {
+      id: '/api/public/request-login-code'
+      path: '/api/public/request-login-code'
+      fullPath: '/api/public/request-login-code'
+      preLoaderRoute: typeof ApiPublicRequestLoginCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/ocr-claude': {
+      id: '/api/public/ocr-claude'
+      path: '/api/public/ocr-claude'
+      fullPath: '/api/public/ocr-claude'
+      preLoaderRoute: typeof ApiPublicOcrClaudeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
+  ApiPublicOcrClaudeRoute: ApiPublicOcrClaudeRoute,
+  ApiPublicRequestLoginCodeRoute: ApiPublicRequestLoginCodeRoute,
+  ApiPublicVerifyLoginCodeRoute: ApiPublicVerifyLoginCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
