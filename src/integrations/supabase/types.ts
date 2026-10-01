@@ -16,19 +16,67 @@ export type Database = {
     Tables: {
       authorized_emails: {
         Row: {
+          apellidos: string | null
           created_at: string
           email: string
           is_admin: boolean
+          nombre: string | null
         }
         Insert: {
+          apellidos?: string | null
           created_at?: string
           email: string
           is_admin?: boolean
+          nombre?: string | null
         }
         Update: {
+          apellidos?: string | null
           created_at?: string
           email?: string
           is_admin?: boolean
+          nombre?: string | null
+        }
+        Relationships: []
+      }
+      noticias: {
+        Row: {
+          creado_en: string
+          creado_por: string
+          data: Json
+          editado: boolean
+          editado_en: string | null
+          editado_por: string | null
+          fecha_noticia: string | null
+          id: string
+          terminado: boolean
+          terminado_en: string | null
+          terminado_por: string | null
+        }
+        Insert: {
+          creado_en?: string
+          creado_por: string
+          data: Json
+          editado?: boolean
+          editado_en?: string | null
+          editado_por?: string | null
+          fecha_noticia?: string | null
+          id: string
+          terminado?: boolean
+          terminado_en?: string | null
+          terminado_por?: string | null
+        }
+        Update: {
+          creado_en?: string
+          creado_por?: string
+          data?: Json
+          editado?: boolean
+          editado_en?: string | null
+          editado_por?: string | null
+          fecha_noticia?: string | null
+          id?: string
+          terminado?: boolean
+          terminado_en?: string | null
+          terminado_por?: string | null
         }
         Relationships: []
       }

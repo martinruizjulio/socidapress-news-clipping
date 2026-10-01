@@ -16,6 +16,13 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -43,6 +50,15 @@ import {
   Sparkles,
 } from "lucide-react";
 import { ocrConClaude } from "@/lib/api-urls";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  cargarNoticiasRemoto,
+  migrarLocalANubeSiHaceFalta,
+  crearNoticiasRemoto,
+  actualizarNoticiaRemoto,
+  alternarTerminadoRemoto,
+  eliminarNoticiaRemoto,
+} from "@/lib/noticias-store";
 
 // Tipos internos
 interface ExtractedImage {
@@ -114,27 +130,31 @@ export interface SavedNoticia {
   // Marcada a mano por quien revisa: indica que esta noticia ya no
   // necesita más cambios. No se deduce de nada, es una decisión propia.
   terminado?: boolean;
+  // Quién creó/editó/terminó esta noticia por última vez (correo) y
+  // cuándo. Se recalculan en el servidor compartido en cada guardado;
+  // se guardan aquí también para mostrarlos sin otra consulta.
+  creadoPor?: string | null;
+  creadoEn?: string | null;
+  editadoPor?: string | null;
+  editadoEn?: string | null;
+  terminadoPor?: string | null;
+  terminadoEn?: string | null;
 }
 
-const STORAGE_KEY = "socidapress:noticias";
-
-function cargarNoticias(): SavedNoticia[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+// Directorio de personas autorizadas (tabla authorized_emails), para
+// mostrar "Nombre Apellidos" en vez del correo en la biblioteca y poder
+// filtrar por persona.
+export interface Persona {
+  email: string;
+  nombre: string | null;
+  apellidos: string | null;
 }
-function guardarNoticias(list: SavedNoticia[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch (e) {
-    console.error(e);
-    toast.error("No se pudo guardar en la biblioteca (¿espacio agotado?).");
-  }
+
+function nombrePersona(email: string | null | undefined, personas: Persona[]): string {
+  if (!email) return "";
+  const p = personas.find((x) => x.email === email);
+  const completo = p ? [p.nombre, p.apellidos].filter(Boolean).join(" ").trim() : "";
+  return completo || email;
 }
 
 // Imagen completa de una página + (opcional) recorte de la zona marcada.
@@ -1091,6 +1111,7 @@ function estaEditada(n: SavedNoticia): boolean {
 function EstadoNoticiaBadges({
   noticia,
   onToggleTerminado,
+  personas,
 }: {
   noticia: SavedNoticia;
   // Callback sin argumentos a propósito: en la lista alterna el valor ya
@@ -1098,6 +1119,7 @@ function EstadoNoticiaBadges({
   // local (para no perder cambios de texto aún no guardados si se
   // reordena la lista al persistir "terminado" desde fuera).
   onToggleTerminado: () => void;
+  personas: Persona[];
 }) {
   const editada = estaEditada(noticia);
   return (
@@ -1105,6 +1127,11 @@ function EstadoNoticiaBadges({
       <Badge variant={editada ? "default" : "outline"} className="gap-1">
         {editada ? "Editado" : "Sin editar"}
       </Badge>
+      {editada && noticia.editadoPor && (
+        <span className="text-xs text-muted-foreground">
+          por {nombrePersona(noticia.editadoPor, personas)}
+        </span>
+      )}
       <Badge
         variant="outline"
         onClick={onToggleTerminado}
@@ -1126,6 +1153,11 @@ function EstadoNoticiaBadges({
         )}
         Terminado
       </Badge>
+      {noticia.terminado && noticia.terminadoPor && (
+        <span className="text-xs text-muted-foreground">
+          por {nombrePersona(noticia.terminadoPor, personas)}
+        </span>
+      )}
     </div>
   );
 }
@@ -1187,6 +1219,7 @@ interface LibraryViewProps {
   onUpdate: (n: SavedNoticia) => void;
   onToggleTerminado: (id: string) => void;
   onNew: () => void;
+  personas: Persona[];
 }
 
 function LibraryView({
@@ -1198,6 +1231,7 @@ function LibraryView({
   onToggleTerminado,
   onUpdate,
   onNew,
+  personas,
 }: LibraryViewProps) {
   // La biblioteca se muestra ordenada por fecha y hora de la noticia (la
   // más reciente primero), no por orden de guardado. Las que no tienen
@@ -1212,6 +1246,44 @@ function LibraryView({
     };
     return [...noticias].sort((a, b) => claveTiempo(b) - claveTiempo(a));
   }, [noticias]);
+
+  // Filtros de la biblioteca: por fecha de la noticia, si está editada,
+  // si está terminada y por quién la ha editado. Al haber muchos análisis
+  // acumulados, estos filtros son necesarios para encontrar algo.
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState("");
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState("");
+  const [filtroEditado, setFiltroEditado] = useState<"todas" | "si" | "no">("todas");
+  const [filtroTerminado, setFiltroTerminado] = useState<"todas" | "si" | "no">("todas");
+  const [filtroPersona, setFiltroPersona] = useState<string>("todas");
+
+  const hayFiltrosActivos =
+    filtroFechaDesde !== "" ||
+    filtroFechaHasta !== "" ||
+    filtroEditado !== "todas" ||
+    filtroTerminado !== "todas" ||
+    filtroPersona !== "todas";
+
+  const limpiarFiltros = () => {
+    setFiltroFechaDesde("");
+    setFiltroFechaHasta("");
+    setFiltroEditado("todas");
+    setFiltroTerminado("todas");
+    setFiltroPersona("todas");
+  };
+
+  const noticiasFiltradas = useMemo(() => {
+    return noticiasOrdenadas.filter((n) => {
+      if (filtroFechaDesde && (!n.fecha || n.fecha < filtroFechaDesde)) return false;
+      if (filtroFechaHasta && (!n.fecha || n.fecha > filtroFechaHasta)) return false;
+      const editada = estaEditada(n);
+      if (filtroEditado === "si" && !editada) return false;
+      if (filtroEditado === "no" && editada) return false;
+      if (filtroTerminado === "si" && !n.terminado) return false;
+      if (filtroTerminado === "no" && n.terminado) return false;
+      if (filtroPersona !== "todas" && n.editadoPor !== filtroPersona) return false;
+      return true;
+    });
+  }, [noticiasOrdenadas, filtroFechaDesde, filtroFechaHasta, filtroEditado, filtroTerminado, filtroPersona]);
 
   const editing = noticias.find((n) => n.id === editingId) ?? null;
   const [draft, setDraft] = useState<SavedNoticia | null>(editing);
@@ -1293,6 +1365,7 @@ function LibraryView({
             <EstadoNoticiaBadges
               noticia={draft}
               onToggleTerminado={() => setDraft({ ...draft, terminado: !draft.terminado })}
+              personas={personas}
             />
           </div>
           <div className="flex gap-2">
@@ -1505,8 +1578,93 @@ function LibraryView({
             Todavía no has guardado ninguna noticia. Importa un PDF para empezar.
           </p>
         ) : (
+          <>
+            <div className="mb-4 flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 p-3">
+              <div className="space-y-1">
+                <Label htmlFor="filtro-fecha-desde" className="text-xs">
+                  Desde
+                </Label>
+                <Input
+                  id="filtro-fecha-desde"
+                  type="date"
+                  value={filtroFechaDesde}
+                  onChange={(e) => setFiltroFechaDesde(e.target.value)}
+                  className="h-8 w-36"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="filtro-fecha-hasta" className="text-xs">
+                  Hasta
+                </Label>
+                <Input
+                  id="filtro-fecha-hasta"
+                  type="date"
+                  value={filtroFechaHasta}
+                  onChange={(e) => setFiltroFechaHasta(e.target.value)}
+                  className="h-8 w-36"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Editado</Label>
+                <Select value={filtroEditado} onValueChange={(v) => setFiltroEditado(v as typeof filtroEditado)}>
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    <SelectItem value="si">Editado</SelectItem>
+                    <SelectItem value="no">Sin editar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Terminado</Label>
+                <Select
+                  value={filtroTerminado}
+                  onValueChange={(v) => setFiltroTerminado(v as typeof filtroTerminado)}
+                >
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    <SelectItem value="si">Terminado</SelectItem>
+                    <SelectItem value="no">Sin terminar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Editado por</Label>
+                <Select value={filtroPersona} onValueChange={setFiltroPersona}>
+                  <SelectTrigger className="h-8 w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    {personas.map((p) => (
+                      <SelectItem key={p.email} value={p.email}>
+                        {nombrePersona(p.email, personas)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {hayFiltrosActivos && (
+                <Button variant="ghost" size="sm" onClick={limpiarFiltros} className="h-8">
+                  Quitar filtros
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">
+                {noticiasFiltradas.length} de {noticiasOrdenadas.length} noticia(s)
+              </span>
+            </div>
+            {noticiasFiltradas.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Ninguna noticia coincide con los filtros.
+              </p>
+            ) : (
           <div className="space-y-3">
-            {noticiasOrdenadas.map((n) => (
+            {noticiasFiltradas.map((n) => (
               <div
                 key={n.id}
                 className={`flex flex-col gap-3 rounded-md border p-4 md:flex-row md:items-center ${
@@ -1538,6 +1696,7 @@ function LibraryView({
                   <EstadoNoticiaBadges
                     noticia={n}
                     onToggleTerminado={() => onToggleTerminado(n.id)}
+                    personas={personas}
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1565,6 +1724,8 @@ function LibraryView({
               </div>
             ))}
           </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -1680,16 +1841,50 @@ export default function SocidaPressApp() {
     }
   }, []);
 
-  // Biblioteca persistente en localStorage
+  // Biblioteca compartida (Supabase): la ven y editan todas las personas
+  // autorizadas, no solo quien la guardó.
   const [saved, setSaved] = useState<SavedNoticia[]>([]);
+  const [cargandoBiblioteca, setCargandoBiblioteca] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lastSavedIds, setLastSavedIds] = useState<Set<string>>(new Set());
+  // Correo de quien ha iniciado sesión, para etiquetar quién edita/termina
+  // cada noticia. Se resuelve una vez al cargar la app.
+  const [emailActual, setEmailActual] = useState<string | null>(null);
   useEffect(() => {
-    setSaved(cargarNoticias());
+    let cancelado = false;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const email = data.session?.user?.email ?? null;
+      if (cancelado) return;
+      setEmailActual(email);
+      try {
+        if (email) await migrarLocalANubeSiHaceFalta(email);
+        const remoto = await cargarNoticiasRemoto();
+        if (!cancelado) setSaved(remoto);
+      } catch (e) {
+        console.error(e);
+        toast.error("No se pudo cargar la biblioteca compartida.");
+      } finally {
+        if (!cancelado) setCargandoBiblioteca(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
   }, []);
-  const persist = useCallback((next: SavedNoticia[]) => {
-    setSaved(next);
-    guardarNoticias(next);
+
+  // Directorio de personas autorizadas (nombre/apellidos por correo), para
+  // mostrar quién ha editado/terminado cada noticia y poder filtrar por
+  // persona en la biblioteca.
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("authorized_emails")
+        .select("email,nombre,apellidos")
+        .order("email");
+      if (!error && data) setPersonas(data as Persona[]);
+    })();
   }, []);
 
   const handleReset = () => {
@@ -3318,7 +3513,7 @@ export default function SocidaPressApp() {
       };
     });
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (!canFinish) {
       toast.error("Revisa periódico, título, fecha y hora antes de guardar.");
       return;
@@ -3327,32 +3522,71 @@ export default function SocidaPressApp() {
       toast.error("No hay ningún bloque de texto seleccionado para guardar.");
       return;
     }
+    if (!emailActual) {
+      toast.error("Tu sesión ha caducado. Vuelve a entrar e inténtalo de nuevo.");
+      return;
+    }
     const createdAt = Date.now();
     const noticias = buildSavedNoticias(createdAt);
-    persist([...noticias, ...saved]);
-    setLastSavedIds(new Set(noticias.map((n) => n.id)));
-    setStage("done");
-    toast.success(
-      noticias.length > 1
-        ? `${noticias.length} noticias guardadas en la biblioteca.`
-        : "Noticia guardada en la biblioteca.",
-    );
+    try {
+      const guardadas = await crearNoticiasRemoto(noticias, emailActual);
+      setSaved((prev) => [...guardadas, ...prev]);
+      setLastSavedIds(new Set(guardadas.map((n) => n.id)));
+      setStage("done");
+      toast.success(
+        guardadas.length > 1
+          ? `${guardadas.length} noticias guardadas en la biblioteca.`
+          : "Noticia guardada en la biblioteca.",
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error("No se pudo guardar en la biblioteca compartida. Inténtalo de nuevo.");
+    }
   };
 
   const openLibrary = () => setStage("library");
-  const deleteNoticia = (id: string) => {
-    persist(saved.filter((n) => n.id !== id));
+  const deleteNoticia = async (id: string) => {
+    const anterior = saved;
+    setSaved((prev) => prev.filter((n) => n.id !== id));
     if (editingId === id) setEditingId(null);
-    toast.success("Noticia eliminada.");
+    try {
+      await eliminarNoticiaRemoto(id);
+      toast.success("Noticia eliminada.");
+    } catch (e) {
+      console.error(e);
+      setSaved(anterior);
+      toast.error("No se pudo eliminar. Inténtalo de nuevo.");
+    }
   };
-  const updateNoticia = (updated: SavedNoticia) => {
-    persist(saved.map((n) => (n.id === updated.id ? { ...updated, updatedAt: Date.now() } : n)));
+  const updateNoticia = async (updated: SavedNoticia) => {
+    if (!emailActual) {
+      toast.error("Tu sesión ha caducado. Vuelve a entrar e inténtalo de nuevo.");
+      return;
+    }
+    try {
+      const guardada = await actualizarNoticiaRemoto(
+        { ...updated, updatedAt: Date.now() },
+        emailActual,
+      );
+      setSaved((prev) => prev.map((n) => (n.id === guardada.id ? guardada : n)));
+    } catch (e) {
+      console.error(e);
+      toast.error("No se pudieron guardar los cambios. Inténtalo de nuevo.");
+    }
   };
   // Marcar/desmarcar "Terminado" es una decisión de revisión, no una
   // edición del contenido: a propósito no toca updatedAt, para que la
   // etiqueta "Editado" siga reflejando solo cambios reales del texto.
-  const toggleTerminado = (id: string) => {
-    persist(saved.map((n) => (n.id === id ? { ...n, terminado: !n.terminado } : n)));
+  const toggleTerminado = async (id: string) => {
+    const n = saved.find((x) => x.id === id);
+    if (!n || !emailActual) return;
+    try {
+      const guardada = await alternarTerminadoRemoto(n, emailActual);
+      setSaved((prev) => prev.map((x) => (x.id === id ? guardada : x)));
+    } catch (e) {
+      console.error(e);
+      toast.error("No se pudo actualizar. Inténtalo de nuevo.");
+    }
   };
 
   const handleExport = () => {
@@ -4032,6 +4266,7 @@ export default function SocidaPressApp() {
             onUpdate={updateNoticia}
             onToggleTerminado={toggleTerminado}
             onNew={handleReset}
+            personas={personas}
           />
         )}
       </main>
