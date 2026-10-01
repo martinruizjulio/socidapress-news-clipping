@@ -40,7 +40,9 @@ import {
   Copy,
   FileText,
   Instagram,
+  Sparkles,
 } from "lucide-react";
+import { ocrConClaude } from "@/lib/api-urls";
 
 // Tipos internos
 interface ExtractedImage {
@@ -1216,6 +1218,9 @@ function LibraryView({
   useEffect(() => {
     setDraft(editing ? JSON.parse(JSON.stringify(editing)) : null);
   }, [editingId, editing]);
+  // Ids de bloques que están siendo releídos con Claude en este momento,
+  // para mostrar el botón en estado de carga solo en ese bloque.
+  const [mejorandoIds, setMejorandoIds] = useState<Set<string>>(new Set());
 
   if (editing && draft) {
     const updateBlock = (bid: string, patch: Partial<SavedBlock>) => {
@@ -1242,6 +1247,39 @@ function LibraryView({
         })),
       });
       toast.success("Periódico, fecha y hora aplicados a todos los bloques.");
+    };
+    // Relee el recorte del bloque con Claude (mejor lectura que Tesseract,
+    // con coste por uso) y sustituye el texto del bloque por el resultado.
+    const mejorarBloqueConClaude = async (b: SavedBlock) => {
+      const imagen = b.imagenSeleccion ?? b.imagenPagina;
+      if (!imagen) {
+        toast.error("Este bloque no tiene imagen guardada para releer.");
+        return;
+      }
+      setMejorandoIds((prev) => new Set(prev).add(b.id));
+      try {
+        const r = await ocrConClaude(imagen);
+        if (!r.ok || !r.texto) {
+          toast.error(
+            r.error === "no-autenticado"
+              ? "Tu sesión ha caducado. Vuelve a entrar e inténtalo de nuevo."
+              : r.error === "no-autorizado"
+                ? "Tu correo no tiene acceso a la lectura con Claude."
+                : "No se pudo releer el texto con Claude. Inténtalo de nuevo.",
+          );
+          return;
+        }
+        updateBlock(b.id, { texto: r.texto });
+        toast.success("Texto releído con Claude.");
+      } catch {
+        toast.error("No se pudo releer el texto con Claude. Inténtalo de nuevo.");
+      } finally {
+        setMejorandoIds((prev) => {
+          const next = new Set(prev);
+          next.delete(b.id);
+          return next;
+        });
+      }
     };
     return (
       <Card>
@@ -1406,7 +1444,25 @@ function LibraryView({
                     )}
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Texto</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Texto</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={mejorandoIds.has(b.id) || !(b.imagenSeleccion || b.imagenPagina)}
+                        onClick={() => mejorarBloqueConClaude(b)}
+                        className="h-7 gap-1.5 text-xs"
+                        title="Vuelve a leer el recorte con Claude (mejor lectura, con coste por uso)"
+                      >
+                        {mejorandoIds.has(b.id) ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        Mejorar con Claude
+                      </Button>
+                    </div>
                     <Textarea
                       rows={24}
                       value={b.texto}
