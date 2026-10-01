@@ -2764,6 +2764,9 @@ export default function SocidaPressApp() {
       //    zona; si no, OCR de alta precisión sobre el recorte mejorado.
       const blocks: ExtractedTextBlock[] = [];
       const pagesText: { page: number; text: string }[] = [];
+      // Cuántas zonas se han releído automáticamente con Claude por baja
+      // confianza de Tesseract, para avisar al terminar.
+      let zonasMejoradasConClaude = 0;
 
       // Preparamos el OCR solo si alguna zona lo necesita.
       type OcrWorker = {
@@ -3102,7 +3105,7 @@ export default function SocidaPressApp() {
                 conf = confBin;
               }
             }
-            return t;
+            return { text: t, confidence: conf };
           };
           // Dividimos en columnas por huecos reales de tinta (igual que
           // con el texto nativo) antes de pasar por OCR, para no depender
@@ -3110,9 +3113,13 @@ export default function SocidaPressApp() {
           // estrechas de periódico.
           const columnas = dividirEnColumnas(z.recorteSoloTexto);
           const textos: string[] = [];
+          const confianzas: number[] = [];
           for (const col of columnas) {
-            const t = await recognizeMejor(col);
-            if (t) textos.push(t);
+            const r = await recognizeMejor(col);
+            if (r.text) {
+              textos.push(r.text);
+              confianzas.push(r.confidence);
+            }
           }
           const bruto = textos.join("\n");
           pagesText.push({ page: z.page, text: bruto });
@@ -3134,6 +3141,30 @@ export default function SocidaPressApp() {
             if (cand) titulo = cand;
           }
           texto = reflujoParrafos(renglones);
+
+          // Si Tesseract ha leído con poca confianza, releemos
+          // automáticamente el recorte con Claude (mejor lectura, con
+          // coste por uso) y nos quedamos con ese texto si responde bien.
+          // No hace falta pulsar nada: se detecta solo cuándo hace falta.
+          const confianzaMedia =
+            confianzas.length > 0 ? confianzas.reduce((a, c) => a + c, 0) / confianzas.length : 0;
+          const UMBRAL_CONFIANZA_CLAUDE = 70;
+          if (texto && confianzaMedia > 0 && confianzaMedia < UMBRAL_CONFIANZA_CLAUDE && z.cropDataUrl) {
+            setProgressLabel(
+              `Lectura poco fiable en página ${z.page} · zona ${z.zona}: mejorando con Claude…`,
+            );
+            try {
+              const mejor = await ocrConClaude(z.cropDataUrl);
+              if (mejor.ok && mejor.texto) {
+                texto = mejor.texto;
+                zonasMejoradasConClaude++;
+              }
+            } catch {
+              // Si falla (sin sesión, sin crédito, sin red...), nos
+              // quedamos con el texto de Tesseract: nunca bloqueamos el
+              // procesado por esto.
+            }
+          }
         }
 
         // Aunque no se haya podido extraer texto o título (por ejemplo,
@@ -3206,6 +3237,10 @@ export default function SocidaPressApp() {
 
       if (foundImages.length === 0 && blocks.length === 0) {
         toast.warning("No se ha extraído contenido del PDF.");
+      } else if (zonasMejoradasConClaude > 0) {
+        toast.success(
+          `Datos extraídos. ${zonasMejoradasConClaude} ${zonasMejoradasConClaude === 1 ? "zona mejorada" : "zonas mejoradas"} automáticamente con Claude por baja confianza del OCR.`,
+        );
       } else {
         toast.success("Datos extraídos. Revisa y ajusta si es necesario.");
       }
