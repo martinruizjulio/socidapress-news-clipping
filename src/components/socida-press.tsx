@@ -208,7 +208,17 @@ interface PageImage {
 
 // Rectángulo de recorte en coordenadas de usuario del PDF (mismo espacio que
 // los items de texto nativos y el viewBox de pdfjs).
-type PdfRect = { xMin: number; xMax: number; yMin: number; yMax: number };
+type PdfRect = {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  // Zonas con el mismo grupo se tratan como UN solo bloque (misma noticia):
+  // útil cuando la foto y el texto de una noticia no caben en un único
+  // rectángulo y hay que marcarlos por separado. Por defecto cada zona
+  // tiene su propio grupo (sin relacionar con ninguna otra).
+  grupo?: number;
+};
 
 // Miniatura de página + info de viewport necesaria para mapear coordenadas
 // pantalla <-> PDF y aplicar el recorte durante el procesado.
@@ -1006,14 +1016,24 @@ function RegionPicker({
     if (x1 - x0 < 10 || y1 - y0 < 10) return;
     const a = toPdf(x0, y0, b.width, b.height);
     const c = toPdf(x1, y1, b.width, b.height);
+    const siguienteGrupo = rects.reduce((max, r) => Math.max(max, r.grupo ?? 0), 0) + 1;
     const nuevo: PdfRect = {
       xMin: Math.min(a.x, c.x),
       xMax: Math.max(a.x, c.x),
       yMin: Math.min(a.y, c.y),
       yMax: Math.max(a.y, c.y),
+      grupo: siguienteGrupo,
     };
     onChange([...rects, nuevo]);
   };
+
+  // Etiqueta visible de cada zona: el número de su GRUPO (1, 2, 3...), no
+  // su posición en el array. Varias zonas vinculadas comparten etiqueta,
+  // así se ve de un vistazo qué zonas forman un mismo bloque.
+  const gruposEnOrden = Array.from(new Set(rects.map((r) => r.grupo ?? 0)));
+  const etiquetaDeGrupo = new Map(gruposEnOrden.map((g, idx) => [g, idx + 1]));
+  const grupoPorEtiqueta = new Map(gruposEnOrden.map((g, idx) => [idx + 1, g]));
+  const numBloques = gruposEnOrden.length;
 
   const overlay = drag
     ? {
@@ -1033,6 +1053,7 @@ function RegionPicker({
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               {rects.length} zona{rects.length === 1 ? "" : "s"} marcada
               {rects.length === 1 ? "" : "s"}
+              {numBloques !== rects.length && ` en ${numBloques} bloque${numBloques === 1 ? "" : "s"}`}
             </span>
           )}
         </p>
@@ -1076,28 +1097,81 @@ function RegionPicker({
           loading="lazy"
           style={{ transform: `rotate(${rot}deg)` }}
         />
-        {rects.map((r, i) => (
-          <div
-            key={i}
-            className="pointer-events-none absolute border-2 border-primary bg-primary/15"
-            style={toPct(r)}
-          >
-            <span className="pointer-events-auto absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-              {i + 1}
-            </span>
-            <button
-              type="button"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                onChange(rects.filter((_, j) => j !== i));
-              }}
-              className="pointer-events-auto absolute -top-2 -left-2 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[12px] leading-none text-destructive-foreground shadow"
-              title="Eliminar zona"
+        {rects.map((r, i) => {
+          const miEtiqueta = etiquetaDeGrupo.get(r.grupo ?? 0) ?? i + 1;
+          // Otras zonas de la página que ya comparten grupo con esta.
+          const companeras = rects.filter((rr, j) => j !== i && rr.grupo === r.grupo);
+          const otrasEtiquetas = Array.from(etiquetaDeGrupo.values()).filter(
+            (e) => e !== miEtiqueta,
+          );
+          return (
+            <div
+              key={i}
+              className="pointer-events-none absolute border-2 border-primary bg-primary/15"
+              style={toPct(r)}
             >
-              ×
-            </button>
-          </div>
-        ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="pointer-events-auto absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
+                    title={
+                      companeras.length > 0
+                        ? `Zona ${miEtiqueta} (vinculada con ${companeras.length + 1} zonas). Pulsa para cambiar.`
+                        : `Zona ${miEtiqueta}. Pulsa para vincularla con otra.`
+                    }
+                  >
+                    {miEtiqueta}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {otrasEtiquetas.length === 0 && companeras.length === 0 && (
+                    <DropdownMenuItem disabled>No hay otra zona con la que vincular</DropdownMenuItem>
+                  )}
+                  {otrasEtiquetas.map((etq) => (
+                    <DropdownMenuItem
+                      key={etq}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => {
+                        const grupoDestino = grupoPorEtiqueta.get(etq);
+                        onChange(
+                          rects.map((rr, j) => (j === i ? { ...rr, grupo: grupoDestino } : rr)),
+                        );
+                      }}
+                    >
+                      Vincular con zona {etq} (mismo bloque)
+                    </DropdownMenuItem>
+                  ))}
+                  {companeras.length > 0 && (
+                    <DropdownMenuItem
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => {
+                        const nuevoGrupo = rects.reduce((max, rr) => Math.max(max, rr.grupo ?? 0), 0) + 1;
+                        onChange(
+                          rects.map((rr, j) => (j === i ? { ...rr, grupo: nuevoGrupo } : rr)),
+                        );
+                      }}
+                    >
+                      Separar de su bloque
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  onChange(rects.filter((_, j) => j !== i));
+                }}
+                className="pointer-events-auto absolute -top-2 -left-2 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[12px] leading-none text-destructive-foreground shadow"
+                title="Eliminar zona"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
         {overlay && (
           <div
             className="pointer-events-none absolute border-2 border-primary/70 bg-primary/10"
@@ -2442,6 +2516,43 @@ export default function SocidaPressApp() {
         return c;
       };
 
+      // Apila varios recortes (uno por rectángulo de un mismo grupo/bloque)
+      // en un único lienzo vertical, en el orden recibido, escalando todos
+      // al mismo ancho (el mayor de ellos) para que el apilado quede
+      // alineado. Con un solo recorte (el caso normal, sin vincular) lo
+      // devuelve tal cual, sin reescalar ni perder nitidez.
+      const apilarRecortes = (recortes: HTMLCanvasElement[]): HTMLCanvasElement | null => {
+        if (recortes.length === 0) return null;
+        if (recortes.length === 1) return recortes[0];
+        const anchoComun = Math.max(...recortes.map((c) => c.width));
+        const separacion = Math.round(anchoComun * 0.015) + 12;
+        const escaladas = recortes.map((c) => {
+          if (c.width === anchoComun) return c;
+          const alto = Math.max(1, Math.round((c.height * anchoComun) / c.width));
+          const esc = document.createElement("canvas");
+          esc.width = anchoComun;
+          esc.height = alto;
+          const ctx = esc.getContext("2d");
+          if (ctx) ctx.drawImage(c, 0, 0, anchoComun, alto);
+          return esc;
+        });
+        const altoTotal =
+          escaladas.reduce((acc, c) => acc + c.height, 0) + separacion * (escaladas.length - 1);
+        const out = document.createElement("canvas");
+        out.width = anchoComun;
+        out.height = altoTotal;
+        const octx = out.getContext("2d");
+        if (!octx) return escaladas[0];
+        octx.fillStyle = "#ffffff";
+        octx.fillRect(0, 0, out.width, out.height);
+        let y = 0;
+        for (const c of escaladas) {
+          octx.drawImage(c, 0, y);
+          y += c.height + separacion;
+        }
+        return out;
+      };
+
       // Ancho objetivo (px) para el recorte de cada zona antes del OCR:
       // suficiente para que las letras del cuerpo de texto tengan un
       // tamaño cómodo para el motor, sin disparar la memoria.
@@ -2977,7 +3088,7 @@ export default function SocidaPressApp() {
       type Zona = {
         page: number;
         zona: number;
-        rectPdf: PdfRect | null;
+        rectsPdf: PdfRect[];
         // Recorte completo de la zona (foto + texto), ya en gris y con luz
         // corregida: es lo que se muestra como miniatura del bloque.
         recorte: HTMLCanvasElement | null;
@@ -2994,18 +3105,47 @@ export default function SocidaPressApp() {
       for (const { page, canvas, rectsPx, rotation } of pageCanvases) {
         const rectsPdf = regions[page] || [];
         if (rectsPx.length) {
-          for (let i = 0; i < rectsPx.length; i++) {
-            const r = rectsPx[i];
-            const rectPdf = rectsPdf[i] ?? null;
-            setProgressLabel(`Preparando zona ${i + 1} de la página ${page}…`);
-            // Preferimos volver a renderizar la zona directamente desde el
-            // PDF a alta resolución (nitidez real); si no es posible,
-            // recurrimos al recorte + ampliación del render de página.
-            const altaRes = rectPdf ? await renderZonaDesdeOriginal(page, rectPdf, rotation) : null;
-            const bruto = altaRes ?? recortar(canvas, r);
+          // Varias zonas marcadas con el mismo "grupo" (vinculadas a mano
+          // por el usuario, normalmente foto y texto que no cupieron en un
+          // único rectángulo) se procesan como UNA sola zona: se renderiza
+          // cada rectángulo por separado y se apilan en un único recorte,
+          // antes de seguir con el resto del pipeline (enderezado, mejora,
+          // separación foto/texto...) exactamente igual que con una zona
+          // normal de un solo rectángulo.
+          const indicesPorGrupo = new Map<number, number[]>();
+          const gruposEnOrden: number[] = [];
+          for (let i = 0; i < rectsPdf.length; i++) {
+            const g = rectsPdf[i]?.grupo ?? i + 1;
+            if (!indicesPorGrupo.has(g)) {
+              indicesPorGrupo.set(g, []);
+              gruposEnOrden.push(g);
+            }
+            indicesPorGrupo.get(g)!.push(i);
+          }
+          for (let gi = 0; gi < gruposEnOrden.length; gi++) {
+            const indices = indicesPorGrupo.get(gruposEnOrden[gi])!;
+            setProgressLabel(`Preparando zona ${gi + 1} de la página ${page}…`);
+            // Preferimos volver a renderizar cada rectángulo directamente
+            // desde el PDF a alta resolución (nitidez real); si no es
+            // posible, recurrimos al recorte + ampliación del render de
+            // página. Con varios rectángulos vinculados, se apilan en
+            // orden vertical en un único lienzo.
+            const subRecortes: HTMLCanvasElement[] = [];
+            let huboAltaRes = false;
+            for (const idx of indices) {
+              const rectPdf = rectsPdf[idx] ?? null;
+              const r = rectsPx[idx];
+              const altaRes = rectPdf
+                ? await renderZonaDesdeOriginal(page, rectPdf, rotation)
+                : null;
+              if (altaRes) huboAltaRes = true;
+              const sub = altaRes ?? recortar(canvas, r);
+              if (sub) subRecortes.push(sub);
+            }
+            const bruto = apilarRecortes(subRecortes);
             const enderezado = bruto ? corregirInclinacion(bruto) : null;
             const mejorado = enderezado
-              ? mejorarZona(enderezado, altaRes ? enderezado.width : 2000)
+              ? mejorarZona(enderezado, huboAltaRes ? enderezado.width : 2000)
               : null;
 
             // Separamos foto y texto dentro de la propia zona: así podemos
@@ -3077,8 +3217,8 @@ export default function SocidaPressApp() {
 
             zonas.push({
               page,
-              zona: i + 1,
-              rectPdf,
+              zona: gi + 1,
+              rectsPdf: indices.map((idx) => rectsPdf[idx]).filter((x): x is PdfRect => !!x),
               recorte: mejorado,
               recorteSoloTexto,
               cropDataUrl: mejorado ? mejorado.toDataURL("image/webp", 0.9) : undefined,
@@ -3086,7 +3226,7 @@ export default function SocidaPressApp() {
             });
           }
         } else {
-          zonas.push({ page, zona: 1, rectPdf: null, recorte: canvas, recorteSoloTexto: canvas });
+          zonas.push({ page, zona: 1, rectsPdf: [], recorte: canvas, recorteSoloTexto: canvas });
         }
       }
       // La primera zona de cada página queda también como recorte resumen.
@@ -3393,7 +3533,9 @@ export default function SocidaPressApp() {
         setProgress(50 + Math.round((zi / zonas.length) * 45));
 
         const nativa = nativePageItems.find((n) => n.page === z.page);
-        const itemsZona = (nativa?.items ?? []).filter((it) => dentro(it, z.rectPdf));
+        const itemsZona = (nativa?.items ?? []).filter((it) =>
+          z.rectsPdf.length === 0 ? true : z.rectsPdf.some((r) => dentro(it, r)),
+        );
 
         let titulo = "";
         let texto = "";
@@ -4011,6 +4153,9 @@ export default function SocidaPressApp() {
               <p className="text-sm text-muted-foreground">
                 Arrastra con el ratón sobre cada página para marcar una o varias zonas. Se escaneará{" "}
                 <b>sólo</b> lo que marques. Usa los botones de girar si la página aparece torcida.
+                Si la foto y el texto de una misma noticia no caben en una sola zona, márcalos por
+                separado y pulsa el número de una de ellas para vincularla con la otra: se tratarán
+                como un único bloque.
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
