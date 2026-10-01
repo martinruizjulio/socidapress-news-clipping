@@ -87,6 +87,8 @@ interface ExtractedTextBlock {
   deporte?: string;
   // Si la modalidad de ese deporte es olímpica o paralímpica.
   categoriaDeporte?: CategoriaDeporte;
+  // Sexo del protagonista de la noticia.
+  genero?: Genero;
   // Si el texto es una noticia de prensa o un escrito propio del
   // protagonista (columna, carta, testimonio...).
   tipoTexto?: TipoTexto;
@@ -130,6 +132,13 @@ const CATEGORIAS_DEPORTE_OPCIONES: { value: CategoriaDeporte; label: string }[] 
   { value: "paralimpico", label: "Paralímpico" },
 ];
 
+// Sexo del protagonista de la noticia.
+type Genero = "hombre" | "mujer";
+const GENEROS_OPCIONES: { value: Genero; label: string }[] = [
+  { value: "hombre", label: "Hombre" },
+  { value: "mujer", label: "Mujer" },
+];
+
 // Si el texto del bloque es una noticia redactada por un periodista o un
 // escrito en primera persona del propio protagonista (columna, carta,
 // testimonio...).
@@ -154,6 +163,8 @@ export interface SavedBlock {
   deporte?: string;
   // Si la modalidad de ese deporte es olímpica o paralímpica.
   categoriaDeporte?: CategoriaDeporte;
+  // Sexo del protagonista de la noticia.
+  genero?: Genero;
   // Si el texto es una noticia de prensa o un escrito propio del
   // protagonista (columna, carta, testimonio...).
   tipoTexto?: TipoTexto;
@@ -1381,6 +1392,7 @@ function LibraryView({
   const [filtroPersona, setFiltroPersona] = useState<string>("todas");
   const [filtroDeporte, setFiltroDeporte] = useState<string>("todas");
   const [filtroCategoria, setFiltroCategoria] = useState<"todas" | CategoriaDeporte>("todas");
+  const [filtroGenero, setFiltroGenero] = useState<"todas" | Genero>("todas");
 
   const hayFiltrosActivos =
     filtroFechaDesde !== "" ||
@@ -1389,7 +1401,8 @@ function LibraryView({
     filtroTerminado !== "todas" ||
     filtroPersona !== "todas" ||
     filtroDeporte !== "todas" ||
-    filtroCategoria !== "todas";
+    filtroCategoria !== "todas" ||
+    filtroGenero !== "todas";
 
   const limpiarFiltros = () => {
     setFiltroFechaDesde("");
@@ -1399,6 +1412,7 @@ function LibraryView({
     setFiltroPersona("todas");
     setFiltroDeporte("todas");
     setFiltroCategoria("todas");
+    setFiltroGenero("todas");
   };
 
   const noticiasFiltradas = useMemo(() => {
@@ -1418,6 +1432,8 @@ function LibraryView({
         !n.bloques.some((b) => b.categoriaDeporte === filtroCategoria)
       )
         return false;
+      if (filtroGenero !== "todas" && !n.bloques.some((b) => b.genero === filtroGenero))
+        return false;
       return true;
     });
   }, [
@@ -1429,6 +1445,7 @@ function LibraryView({
     filtroPersona,
     filtroDeporte,
     filtroCategoria,
+    filtroGenero,
   ]);
 
   const editing = noticias.find((n) => n.id === editingId) ?? null;
@@ -1631,7 +1648,7 @@ function LibraryView({
                     <Input value={String(b.page)} disabled />
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Deporte</Label>
                     <Select
@@ -1671,6 +1688,27 @@ function LibraryView({
                         {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
                           <SelectItem key={c.value} value={c.value}>
                             {c.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Hombre/Mujer</Label>
+                    <Select
+                      value={b.genero ?? ""}
+                      onValueChange={(v) =>
+                        updateBlock(b.id, { genero: v === SIN_ESPECIFICAR ? undefined : (v as Genero) })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Hombre/Mujer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                        {GENEROS_OPCIONES.map((g) => (
+                          <SelectItem key={g.value} value={g.value}>
+                            {g.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1909,6 +1947,25 @@ function LibraryView({
                       {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
                         <SelectItem key={c.value} value={c.value}>
                           {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Hombre/Mujer</Label>
+                  <Select
+                    value={filtroGenero}
+                    onValueChange={(v) => setFiltroGenero(v as typeof filtroGenero)}
+                  >
+                    <SelectTrigger className="h-8 w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      {GENEROS_OPCIONES.map((g) => (
+                        <SelectItem key={g.value} value={g.value}>
+                          {g.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -3840,6 +3897,7 @@ export default function SocidaPressApp() {
         texto: t.text,
         deporte: t.deporte,
         categoriaDeporte: t.categoriaDeporte,
+        genero: t.genero,
         tipoTexto: t.tipoTexto,
         imagenPagina: pi?.fullDataUrl ?? null,
         imagenSeleccion: t.cropDataUrl ?? pi?.cropDataUrl ?? null,
@@ -3963,6 +4021,7 @@ export default function SocidaPressApp() {
           hora: t.hora ?? "",
           deporte: t.deporte ?? "",
           categoriaDeporte: t.categoriaDeporte ?? "",
+          genero: t.genero ?? "",
           tipoTexto: t.tipoTexto ?? "",
           texto: t.text,
           // Imagen completa de la página de donde sale el bloque y, si el
@@ -4414,7 +4473,7 @@ export default function SocidaPressApp() {
                               }}
                             />
                           </div>
-                          <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
                             <Select
                               value={b.deporte ?? ""}
                               onValueChange={(v) => {
@@ -4454,6 +4513,27 @@ export default function SocidaPressApp() {
                                 {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
                                   <SelectItem key={c.value} value={c.value}>
                                     {c.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={b.genero ?? ""}
+                              onValueChange={(v) => {
+                                const genero = v === SIN_ESPECIFICAR ? undefined : (v as Genero);
+                                setTextBlocks((prev) =>
+                                  prev.map((x) => (x.id === b.id ? { ...x, genero } : x)),
+                                );
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Hombre/Mujer" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                                {GENEROS_OPCIONES.map((g) => (
+                                  <SelectItem key={g.value} value={g.value}>
+                                    {g.label}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
