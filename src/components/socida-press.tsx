@@ -1300,13 +1300,15 @@ function LibraryView({
   const [filtroEditado, setFiltroEditado] = useState<"todas" | "si" | "no">("todas");
   const [filtroTerminado, setFiltroTerminado] = useState<"todas" | "si" | "no">("todas");
   const [filtroPersona, setFiltroPersona] = useState<string>("todas");
+  const [filtroDeporte, setFiltroDeporte] = useState<string>("todas");
 
   const hayFiltrosActivos =
     filtroFechaDesde !== "" ||
     filtroFechaHasta !== "" ||
     filtroEditado !== "todas" ||
     filtroTerminado !== "todas" ||
-    filtroPersona !== "todas";
+    filtroPersona !== "todas" ||
+    filtroDeporte !== "todas";
 
   const limpiarFiltros = () => {
     setFiltroFechaDesde("");
@@ -1314,6 +1316,7 @@ function LibraryView({
     setFiltroEditado("todas");
     setFiltroTerminado("todas");
     setFiltroPersona("todas");
+    setFiltroDeporte("todas");
   };
 
   const noticiasFiltradas = useMemo(() => {
@@ -1326,9 +1329,19 @@ function LibraryView({
       if (filtroTerminado === "si" && !n.terminado) return false;
       if (filtroTerminado === "no" && n.terminado) return false;
       if (filtroPersona !== "todas" && n.editadoPor !== filtroPersona) return false;
+      if (filtroDeporte !== "todas" && !n.bloques.some((b) => b.deporte === filtroDeporte))
+        return false;
       return true;
     });
-  }, [noticiasOrdenadas, filtroFechaDesde, filtroFechaHasta, filtroEditado, filtroTerminado, filtroPersona]);
+  }, [
+    noticiasOrdenadas,
+    filtroFechaDesde,
+    filtroFechaHasta,
+    filtroEditado,
+    filtroTerminado,
+    filtroPersona,
+    filtroDeporte,
+  ]);
 
   const editing = noticias.find((n) => n.id === editingId) ?? null;
   const [draft, setDraft] = useState<SavedNoticia | null>(editing);
@@ -1512,14 +1525,18 @@ function LibraryView({
                   <div className="space-y-1">
                     <Label className="text-xs">Fecha</Label>
                     <Input
+                      type={b.fecha ? "date" : "text"}
                       value={b.fecha}
+                      placeholder="No detectada, revisa el PDF"
                       onChange={(e) => updateBlock(b.id, { fecha: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Hora</Label>
                     <Input
+                      type={b.hora ? "time" : "text"}
                       value={b.hora}
+                      placeholder="No detectada, revisa el PDF"
                       onChange={(e) => updateBlock(b.id, { hora: e.target.value })}
                     />
                   </div>
@@ -1530,7 +1547,7 @@ function LibraryView({
                   <div className="space-y-1">
                     <Label className="text-xs">Deporte</Label>
                     <Select
-                      value={b.deporte ?? SIN_ESPECIFICAR}
+                      value={b.deporte ?? ""}
                       onValueChange={(v) =>
                         updateBlock(b.id, { deporte: v === SIN_ESPECIFICAR ? undefined : v })
                       }
@@ -1549,9 +1566,9 @@ function LibraryView({
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Tipo de texto</Label>
+                    <Label className="text-xs">Tipo de noticia</Label>
                     <Select
-                      value={b.tipoTexto ?? SIN_ESPECIFICAR}
+                      value={b.tipoTexto ?? ""}
                       onValueChange={(v) =>
                         updateBlock(b.id, {
                           tipoTexto: v === SIN_ESPECIFICAR ? undefined : (v as TipoTexto),
@@ -1559,13 +1576,13 @@ function LibraryView({
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Tipo de texto" />
+                        <SelectValue placeholder="Tipo de noticia" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
-                        <SelectItem value="noticia">Noticia</SelectItem>
+                        <SelectItem value="noticia">Noticia global</SelectItem>
                         <SelectItem value="escrito-propio">
-                          Escrito propio del protagonista
+                          Escrito por el protagonista
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -1740,6 +1757,22 @@ function LibraryView({
                     {personas.map((p) => (
                       <SelectItem key={p.email} value={p.email}>
                         {nombrePersona(p.email, personas)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Deporte</Label>
+                <Select value={filtroDeporte} onValueChange={setFiltroDeporte}>
+                  <SelectTrigger className="h-8 w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    {DEPORTES_OPCIONES.map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -3522,6 +3555,8 @@ export default function SocidaPressApp() {
       // defecto para esa zona. Cada bloque sigue siendo editable aparte.
       for (const b of blocks) {
         if (!b.periodico) b.periodico = meta.periodico || "";
+        if (!b.fecha) b.fecha = meta.fecha || "";
+        if (!b.hora) b.hora = meta.hora || "";
       }
 
       setProgress(100);
@@ -3574,8 +3609,11 @@ export default function SocidaPressApp() {
     [textBlocks, selectedTextIds],
   );
 
-  const canFinish =
-    metadata.periodico.trim() && metadata.titulo.trim() && metadata.fecha && metadata.hora;
+  // El periódico/título/fecha/hora generales del documento ya no se piden
+  // en un formulario propio (quedaba duplicado: cada bloque tiene los
+  // suyos, editables aparte); basta con tener algún bloque seleccionado
+  // para poder guardar.
+  const canFinish = finalTexts.length > 0;
 
   // Cada bloque (zona) seleccionado es una noticia parcial independiente:
   // se guarda como su PROPIA entrada en la biblioteca, con su propio
@@ -4020,59 +4058,6 @@ export default function SocidaPressApp() {
           <div className="space-y-8">
             <Card>
               <CardHeader>
-                <CardTitle>Datos de la noticia</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Extraídos automáticamente del PDF. Revísalos y edítalos si es necesario.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="periodico">Periódico</Label>
-                    <Input
-                      id="periodico"
-                      value={metadata.periodico}
-                      onChange={(e) => setMetadata({ ...metadata, periodico: e.target.value })}
-                      placeholder="Ej. El País"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="titulo">Título de la noticia</Label>
-                    <Input
-                      id="titulo"
-                      value={metadata.titulo}
-                      onChange={(e) => setMetadata({ ...metadata, titulo: e.target.value })}
-                      placeholder="Titular"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="fecha">Fecha</Label>
-                    <Input
-                      id="fecha"
-                      type={metadata.fecha ? "date" : "text"}
-                      value={metadata.fecha}
-                      placeholder="No detectada, revisa el PDF"
-                      onChange={(e) => setMetadata({ ...metadata, fecha: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="hora">Hora</Label>
-                    <Input
-                      id="hora"
-                      type={metadata.hora ? "time" : "text"}
-                      value={metadata.hora}
-                      placeholder="No detectada, revisa el PDF"
-                      onChange={(e) => setMetadata({ ...metadata, hora: e.target.value })}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Separator />
-
-            <Card>
-              <CardHeader>
                 <CardTitle>Imágenes detectadas ({images.length})</CardTitle>
               </CardHeader>
               <CardContent>
@@ -4199,9 +4184,9 @@ export default function SocidaPressApp() {
                               }}
                             />
                             <Input
-                              type="text"
+                              type={b.fecha ? "date" : "text"}
                               value={b.fecha ?? ""}
-                              placeholder="Fecha (opcional)"
+                              placeholder="No detectada, revisa el PDF"
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setTextBlocks((prev) =>
@@ -4210,9 +4195,9 @@ export default function SocidaPressApp() {
                               }}
                             />
                             <Input
-                              type="text"
+                              type={b.hora ? "time" : "text"}
                               value={b.hora ?? ""}
-                              placeholder="Hora (opcional)"
+                              placeholder="No detectada, revisa el PDF"
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setTextBlocks((prev) =>
@@ -4223,7 +4208,7 @@ export default function SocidaPressApp() {
                           </div>
                           <div className="grid gap-2 sm:grid-cols-2">
                             <Select
-                              value={b.deporte ?? SIN_ESPECIFICAR}
+                              value={b.deporte ?? ""}
                               onValueChange={(v) => {
                                 const deporte = v === SIN_ESPECIFICAR ? undefined : v;
                                 setTextBlocks((prev) =>
@@ -4244,7 +4229,7 @@ export default function SocidaPressApp() {
                               </SelectContent>
                             </Select>
                             <Select
-                              value={b.tipoTexto ?? SIN_ESPECIFICAR}
+                              value={b.tipoTexto ?? ""}
                               onValueChange={(v) => {
                                 const tipoTexto = v === SIN_ESPECIFICAR ? undefined : (v as TipoTexto);
                                 setTextBlocks((prev) =>
@@ -4253,13 +4238,13 @@ export default function SocidaPressApp() {
                               }}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Tipo de texto" />
+                                <SelectValue placeholder="Tipo de noticia" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
-                                <SelectItem value="noticia">Noticia</SelectItem>
+                                <SelectItem value="noticia">Noticia global</SelectItem>
                                 <SelectItem value="escrito-propio">
-                                  Escrito propio del protagonista
+                                  Escrito por el protagonista
                                 </SelectItem>
                               </SelectContent>
                             </Select>
