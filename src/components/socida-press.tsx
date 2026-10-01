@@ -1411,6 +1411,57 @@ interface LibraryViewProps {
   onVolverAnalisis?: () => void;
 }
 
+// Indicador de en qué fase del flujo de trabajo está la aplicación. Por
+// ahora todo el proceso de selección/edición de noticias es la Fase 1; se
+// deja preparado para que más adelante se añadan la Fase 2 y, si hace
+// falta, una Fase 3, marcando cuál está activa.
+const FASES_APP = [
+  { n: 1, label: "Selección y edición de noticias" },
+  { n: 2, label: "Revisión y cierre" },
+] as const;
+
+function FaseIndicador({ actual }: { actual: number }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-xs">
+      {FASES_APP.map((f, i) => {
+        const completada = f.n < actual;
+        const activa = f.n === actual;
+        return (
+          <div key={f.n} className="flex items-center gap-x-2 gap-y-1">
+            <span
+              className={
+                "flex items-center gap-1.5 " +
+                (activa
+                  ? "font-medium text-foreground"
+                  : completada
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground/50")
+              }
+            >
+              {completada ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+              ) : (
+                <span
+                  className={
+                    "flex h-4 w-4 items-center justify-center rounded-full border text-[10px] " +
+                    (activa ? "border-primary text-primary" : "border-muted-foreground/40")
+                  }
+                >
+                  {f.n}
+                </span>
+              )}
+              Fase {f.n}. {f.label}
+            </span>
+            {i < FASES_APP.length - 1 && (
+              <span className="h-px w-8 bg-border sm:w-12" aria-hidden="true" />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function LibraryView({
   noticias,
   editingId,
@@ -1941,20 +1992,23 @@ function LibraryView({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <div className="flex items-center gap-2">
-          {onVolverAnalisis && (
-            <Button variant="ghost" size="sm" onClick={onVolverAnalisis} className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Volver al análisis
-            </Button>
-          )}
-          <CardTitle>Biblioteca de noticias</CardTitle>
+      <CardHeader className="gap-3 space-y-0">
+        <div className="flex flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {onVolverAnalisis && (
+              <Button variant="ghost" size="sm" onClick={onVolverAnalisis} className="gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Volver al análisis
+              </Button>
+            )}
+            <CardTitle>Biblioteca de noticias</CardTitle>
+          </div>
+          <Button size="sm" onClick={onNew} className="gap-2">
+            <FileUp className="h-4 w-4" />
+            Nueva noticia
+          </Button>
         </div>
-        <Button size="sm" onClick={onNew} className="gap-2">
-          <FileUp className="h-4 w-4" />
-          Nueva noticia
-        </Button>
+        <FaseIndicador actual={1} />
       </CardHeader>
       <CardContent>
         {noticias.length === 0 ? (
@@ -1972,7 +2026,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       {periodicos.map((p) => (
                         <SelectItem key={p} value={p}>
                           {p}
@@ -2015,7 +2069,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       <SelectItem value="si">Editado</SelectItem>
                       <SelectItem value="no">Sin editar</SelectItem>
                     </SelectContent>
@@ -2031,7 +2085,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       <SelectItem value="si">Terminado</SelectItem>
                       <SelectItem value="no">Sin terminar</SelectItem>
                     </SelectContent>
@@ -2046,7 +2100,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       {personas.map((p) => (
                         <SelectItem key={p.email} value={p.email}>
                           {nombrePersona(p.email, personas)}
@@ -2062,7 +2116,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       {DEPORTES_OPCIONES.map((d) => (
                         <SelectItem key={d} value={d}>
                           {d}
@@ -2081,7 +2135,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
                         <SelectItem key={c.value} value={c.value}>
                           {c.label}
@@ -2100,7 +2154,7 @@ function LibraryView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Selecciona</SelectItem>
                       {GENEROS_OPCIONES.map((g) => (
                         <SelectItem key={g.value} value={g.value}>
                           {g.label}
@@ -2114,10 +2168,10 @@ function LibraryView({
                     Quitar filtros
                   </Button>
                 )}
-                <span className="text-xs text-muted-foreground">
-                  {noticiasFiltradas.length} de {noticiasOrdenadas.length} noticia(s)
-                </span>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {noticiasFiltradas.length} de {noticiasOrdenadas.length} noticia(s)
+              </p>
             </div>
             {/* Selección múltiple: elegir varias noticias (con las
                 casillas de cada tarjeta) y exportarlas todas juntas en un
