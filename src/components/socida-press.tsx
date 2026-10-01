@@ -2162,6 +2162,11 @@ export default function SocidaPressApp() {
   };
   const [selectedImgIds, setSelectedImgIds] = useState<Set<string>>(new Set());
   const [selectedTextIds, setSelectedTextIds] = useState<Set<string>>(new Set());
+  // Bloques ya guardados individualmente (botón "Guardar esta noticia" de
+  // cada bloque), para no volver a guardarlos con el botón general y
+  // mostrarlos como ya hechos mientras se sigue trabajando en los demás.
+  const [bloquesGuardadosIds, setBloquesGuardadosIds] = useState<Set<string>>(new Set());
+  const [guardandoBloqueId, setGuardandoBloqueId] = useState<string | null>(null);
   const [thumbs, setThumbs] = useState<PageThumb[]>([]);
   const [pageImages, setPageImages] = useState<PageImage[]>([]);
   const [regions, setRegions] = useState<Record<number, PdfRect[]>>({});
@@ -3952,8 +3957,11 @@ export default function SocidaPressApp() {
   // zona no tenía el suyo propio). Conserva la imagen de la página
   // completa (imagenPagina) para poder ver de dónde salió, aunque ya no
   // comparta biblioteca con el resto de bloques de ese mismo PDF.
-  const buildSavedNoticias = (createdAt: number): SavedNoticia[] =>
-    finalTexts.map((t, idx) => {
+  const construirNoticiasDesdeBloques = (
+    bloques: ExtractedTextBlock[],
+    createdAt: number,
+  ): SavedNoticia[] =>
+    bloques.map((t, idx) => {
       const pi = pageImages.find((p) => p.page === t.page);
       const id = `n_${createdAt}_${idx}_${Math.random().toString(36).slice(2, 8)}`;
       const bloque: SavedBlock = {
@@ -3987,6 +3995,9 @@ export default function SocidaPressApp() {
       };
     });
 
+  const buildSavedNoticias = (createdAt: number): SavedNoticia[] =>
+    construirNoticiasDesdeBloques(finalTexts, createdAt);
+
   const handleFinish = async () => {
     if (!canFinish) {
       toast.error("Revisa periódico, título, fecha y hora antes de guardar.");
@@ -3994,6 +4005,10 @@ export default function SocidaPressApp() {
     }
     if (finalTexts.length === 0) {
       toast.error("No hay ningún bloque de texto seleccionado para guardar.");
+      return;
+    }
+    if (finalTexts.some((t) => !t.periodico)) {
+      toast.error("Elige el periódico de cada bloque seleccionado antes de guardar.");
       return;
     }
     if (!emailActual) {
@@ -4015,6 +4030,38 @@ export default function SocidaPressApp() {
     } catch (e) {
       console.error(e);
       toast.error("No se pudo guardar en la biblioteca compartida. Inténtalo de nuevo.");
+    }
+  };
+
+  // Guarda un único bloque (una de las noticias detectadas) sin esperar a
+  // los demás: así, si una noticia está lista antes que otra, se puede
+  // guardar ya y seguir trabajando en el resto sin perder el progreso.
+  const guardarBloqueIndividual = async (b: ExtractedTextBlock) => {
+    if (!b.periodico) {
+      toast.error("Elige el periódico de este bloque antes de guardarlo.");
+      return;
+    }
+    if (!emailActual) {
+      toast.error("Tu sesión ha caducado. Vuelve a entrar e inténtalo de nuevo.");
+      return;
+    }
+    setGuardandoBloqueId(b.id);
+    try {
+      const noticias = construirNoticiasDesdeBloques([b], Date.now());
+      const guardadas = await crearNoticiasRemoto(noticias, emailActual);
+      setSaved((prev) => [...guardadas, ...prev]);
+      setBloquesGuardadosIds((prev) => new Set(prev).add(b.id));
+      setSelectedTextIds((prev) => {
+        const n = new Set(prev);
+        n.delete(b.id);
+        return n;
+      });
+      toast.success("Noticia guardada en la biblioteca.");
+    } catch (e) {
+      console.error(e);
+      toast.error("No se pudo guardar esta noticia. Inténtalo de nuevo.");
+    } finally {
+      setGuardandoBloqueId(null);
     }
   };
 
@@ -4448,24 +4495,34 @@ export default function SocidaPressApp() {
                 ) : (
                   textBlocks.map((b) => {
                     const selected = selectedTextIds.has(b.id);
+                    const guardado = bloquesGuardadosIds.has(b.id);
                     return (
                       <label
                         key={b.id}
-                        className={`flex cursor-pointer gap-3 rounded-lg border-2 p-3 transition ${
-                          selected
-                            ? "border-primary bg-primary/5"
-                            : "border-border opacity-70 hover:opacity-100"
+                        className={`flex gap-3 rounded-lg border-2 p-3 transition ${
+                          guardado
+                            ? "cursor-default border-green-600/50 bg-green-600/5"
+                            : selected
+                              ? "cursor-pointer border-primary bg-primary/5"
+                              : "cursor-pointer border-border opacity-70 hover:opacity-100"
                         }`}
                       >
                         <Checkbox
                           checked={selected}
+                          disabled={guardado}
                           onCheckedChange={() => toggleTxt(b.id)}
                           className="mt-1"
                         />
                         <div className="flex-1 space-y-2">
-                          <p className="text-xs font-medium text-muted-foreground">
+                          <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                             Página {b.page}
                             {b.zona ? ` · zona ${b.zona}` : ""}
+                            {guardado && (
+                              <span className="inline-flex items-center gap-1 text-green-700">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Guardada en la biblioteca
+                              </span>
+                            )}
                           </p>
                           {/* Foto propia de esta noticia (si la zona tenía una
                               fotografía separada del texto): así se ve la
@@ -4501,6 +4558,7 @@ export default function SocidaPressApp() {
                           <Input
                             value={b.titulo ?? ""}
                             placeholder="Subtítulo del bloque (opcional)"
+                            disabled={guardado}
                             onChange={(e) => {
                               const v = e.target.value;
                               setTextBlocks((prev) =>
@@ -4512,6 +4570,7 @@ export default function SocidaPressApp() {
                           <div className="grid gap-2 sm:grid-cols-3">
                             <Select
                               value={b.periodico ?? ""}
+                              disabled={guardado}
                               onValueChange={(v) => {
                                 const periodico = v === SIN_ESPECIFICAR ? undefined : v;
                                 setTextBlocks((prev) =>
@@ -4520,7 +4579,7 @@ export default function SocidaPressApp() {
                               }}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Periódico (opcional)" />
+                                <SelectValue placeholder="Periódico" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
@@ -4534,6 +4593,7 @@ export default function SocidaPressApp() {
                             <Input
                               type="date"
                               value={b.fecha ?? ""}
+                              disabled={guardado}
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setTextBlocks((prev) =>
@@ -4544,6 +4604,7 @@ export default function SocidaPressApp() {
                             <Input
                               type="time"
                               value={b.hora ?? ""}
+                              disabled={guardado}
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setTextBlocks((prev) =>
@@ -4555,6 +4616,7 @@ export default function SocidaPressApp() {
                           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
                             <Select
                               value={b.deporte ?? ""}
+                              disabled={guardado}
                               onValueChange={(v) => {
                                 const deporte = v === SIN_ESPECIFICAR ? undefined : v;
                                 setTextBlocks((prev) =>
@@ -4576,6 +4638,7 @@ export default function SocidaPressApp() {
                             </Select>
                             <Select
                               value={b.categoriaDeporte ?? ""}
+                              disabled={guardado}
                               onValueChange={(v) => {
                                 const categoriaDeporte =
                                   v === SIN_ESPECIFICAR ? undefined : (v as CategoriaDeporte);
@@ -4598,6 +4661,7 @@ export default function SocidaPressApp() {
                             </Select>
                             <Select
                               value={b.genero ?? ""}
+                              disabled={guardado}
                               onValueChange={(v) => {
                                 const genero = v === SIN_ESPECIFICAR ? undefined : (v as Genero);
                                 setTextBlocks((prev) =>
@@ -4619,6 +4683,7 @@ export default function SocidaPressApp() {
                             </Select>
                             <Select
                               value={b.tipoTexto ?? ""}
+                              disabled={guardado}
                               onValueChange={(v) => {
                                 const tipoTexto = v === SIN_ESPECIFICAR ? undefined : (v as TipoTexto);
                                 setTextBlocks((prev) =>
@@ -4639,12 +4704,16 @@ export default function SocidaPressApp() {
                             </Select>
                           </div>
 
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-2">
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              disabled={mejorandoIds.has(b.id) || !(b.cropDataUrl || b.fotoDataUrl)}
+                              disabled={
+                                guardado ||
+                                mejorandoIds.has(b.id) ||
+                                !(b.cropDataUrl || b.fotoDataUrl)
+                              }
                               onClick={(e) => {
                                 e.preventDefault();
                                 void mejorarBloqueConClaude(b);
@@ -4659,9 +4728,30 @@ export default function SocidaPressApp() {
                               )}
                               Mejorar con Claude
                             </Button>
+                            {!guardado && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={guardandoBloqueId === b.id}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  void guardarBloqueIndividual(b);
+                                }}
+                                className="h-7 gap-1.5 text-xs"
+                                title="Guarda ya esta noticia en la biblioteca, sin esperar a las demás"
+                              >
+                                {guardandoBloqueId === b.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Save className="h-3.5 w-3.5" />
+                                )}
+                                Guardar esta noticia
+                              </Button>
+                            )}
                           </div>
                           <Textarea
                             value={b.text}
+                            disabled={guardado}
                             onChange={(e) => {
                               const v = e.target.value;
                               setTextBlocks((prev) =>
