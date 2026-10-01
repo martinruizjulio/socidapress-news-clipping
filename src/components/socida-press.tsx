@@ -1220,6 +1220,9 @@ interface LibraryViewProps {
   onToggleTerminado: (id: string) => void;
   onNew: () => void;
   personas: Persona[];
+  // Presente solo si había un análisis en curso antes de entrar en la
+  // Biblioteca (para poder volver a él sin perderlo).
+  onVolverAnalisis?: () => void;
 }
 
 function LibraryView({
@@ -1232,6 +1235,7 @@ function LibraryView({
   onUpdate,
   onNew,
   personas,
+  onVolverAnalisis,
 }: LibraryViewProps) {
   // La biblioteca se muestra ordenada por fecha y hora de la noticia (la
   // más reciente primero), no por orden de guardado. Las que no tienen
@@ -1566,7 +1570,15 @@ function LibraryView({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle>Biblioteca de noticias</CardTitle>
+        <div className="flex items-center gap-2">
+          {onVolverAnalisis && (
+            <Button variant="ghost" size="sm" onClick={onVolverAnalisis} className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Volver al análisis
+            </Button>
+          )}
+          <CardTitle>Biblioteca de noticias</CardTitle>
+        </div>
         <Button size="sm" onClick={onNew} className="gap-2">
           <FileUp className="h-4 w-4" />
           Nueva noticia
@@ -1734,6 +1746,10 @@ function LibraryView({
 
 export default function SocidaPressApp() {
   const [stage, setStage] = useState<Stage>("form");
+  // Guarda en qué paso del análisis estábamos antes de entrar en la
+  // Biblioteca, para poder volver a él (sin perder lo que había en
+  // curso) en vez de obligar a empezar de cero.
+  const [previousStage, setPreviousStage] = useState<Stage | null>(null);
   const [metadata, setMetadata] = useState<Metadata>({
     periodico: "",
     titulo: "",
@@ -1889,6 +1905,7 @@ export default function SocidaPressApp() {
 
   const handleReset = () => {
     setStage("form");
+    setPreviousStage(null);
     setFile(null);
     setImages([]);
     setTextBlocks([]);
@@ -3544,7 +3561,18 @@ export default function SocidaPressApp() {
     }
   };
 
-  const openLibrary = () => setStage("library");
+  const openLibrary = () => {
+    // Solo recordamos el paso anterior si había un análisis en curso
+    // (no al entrar ya desde la propia Biblioteca ni desde el formulario
+    // vacío de inicio).
+    if (stage !== "library" && stage !== "form") setPreviousStage(stage);
+    setStage("library");
+  };
+  const volverAlAnalisis = () => {
+    if (!previousStage) return;
+    setStage(previousStage);
+    setPreviousStage(null);
+  };
   const deleteNoticia = async (id: string) => {
     const anterior = saved;
     setSaved((prev) => prev.filter((n) => n.id !== id));
@@ -4267,6 +4295,7 @@ export default function SocidaPressApp() {
             onToggleTerminado={toggleTerminado}
             onNew={handleReset}
             personas={personas}
+            onVolverAnalisis={previousStage ? volverAlAnalisis : undefined}
           />
         )}
       </main>
