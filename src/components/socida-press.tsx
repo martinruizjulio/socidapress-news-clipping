@@ -1587,6 +1587,39 @@ export default function SocidaPressApp() {
   const [progressLabel, setProgressLabel] = useState("");
   const [images, setImages] = useState<ExtractedImage[]>([]);
   const [textBlocks, setTextBlocks] = useState<ExtractedTextBlock[]>([]);
+  // Ids de bloques que están siendo releídos con Claude en este momento.
+  const [mejorandoIds, setMejorandoIds] = useState<Set<string>>(new Set());
+  const mejorarBloqueConClaude = async (b: ExtractedTextBlock) => {
+    const imagen = b.cropDataUrl ?? b.fotoDataUrl;
+    if (!imagen) {
+      toast.error("Este bloque no tiene imagen para releer.");
+      return;
+    }
+    setMejorandoIds((prev) => new Set(prev).add(b.id));
+    try {
+      const r = await ocrConClaude(imagen);
+      if (!r.ok || !r.texto) {
+        toast.error(
+          r.error === "no-autenticado"
+            ? "Tu sesión ha caducado. Vuelve a entrar e inténtalo de nuevo."
+            : r.error === "no-autorizado"
+              ? "Tu correo no tiene acceso a la lectura con Claude."
+              : "No se pudo releer el texto con Claude. Inténtalo de nuevo.",
+        );
+        return;
+      }
+      setTextBlocks((prev) => prev.map((x) => (x.id === b.id ? { ...x, text: r.texto! } : x)));
+      toast.success("Texto releído con Claude.");
+    } catch {
+      toast.error("No se pudo releer el texto con Claude. Inténtalo de nuevo.");
+    } finally {
+      setMejorandoIds((prev) => {
+        const next = new Set(prev);
+        next.delete(b.id);
+        return next;
+      });
+    }
+  };
   const [selectedImgIds, setSelectedImgIds] = useState<Set<string>>(new Set());
   const [selectedTextIds, setSelectedTextIds] = useState<Set<string>>(new Set());
   const [thumbs, setThumbs] = useState<PageThumb[]>([]);
@@ -3804,6 +3837,27 @@ export default function SocidaPressApp() {
                             />
                           </div>
 
+                          <div className="flex justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={mejorandoIds.has(b.id) || !(b.cropDataUrl || b.fotoDataUrl)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                void mejorarBloqueConClaude(b);
+                              }}
+                              className="h-7 gap-1.5 text-xs"
+                              title="Vuelve a leer el recorte con Claude (mejor lectura, con coste por uso)"
+                            >
+                              {mejorandoIds.has(b.id) ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-3.5 w-3.5" />
+                              )}
+                              Mejorar con Claude
+                            </Button>
+                          </div>
                           <Textarea
                             value={b.text}
                             onChange={(e) => {
