@@ -1258,11 +1258,15 @@ function EstadoNoticiaBadges({
       <Badge variant={editada ? "default" : "outline"} className="gap-1">
         {editada ? "Editado" : "Sin editar"}
       </Badge>
-      {editada && noticia.editadoPor && (
-        <span className="text-xs text-muted-foreground">
-          por {nombrePersona(noticia.editadoPor, personas)}
-        </span>
-      )}
+      {/* Si quien terminó la noticia es la misma persona que la editó, no
+          se repite el nombre dos veces: ya aparece junto a "Terminado". */}
+      {editada &&
+        noticia.editadoPor &&
+        !(noticia.terminado && noticia.terminadoPor === noticia.editadoPor) && (
+          <span className="text-xs text-muted-foreground">
+            por {nombrePersona(noticia.editadoPor, personas)}
+          </span>
+        )}
       <Badge
         variant="outline"
         onClick={onToggleTerminado}
