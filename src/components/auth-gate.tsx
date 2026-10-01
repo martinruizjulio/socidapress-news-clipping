@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { requestLoginCode, verifyLoginCode } from "@/lib/login.functions";
+import { pedirCodigo, verificarCodigo } from "@/lib/api-urls";
 
 type Estado = "cargando" | "sin-sesion" | "no-autorizado" | "ok";
 
@@ -59,7 +59,7 @@ function Login({ noAutorizado }: { noAutorizado: boolean }) {
     setError(null);
     setOcupado(true);
     try {
-      const r = await requestLoginCode({ data: { email: email.trim().toLowerCase() } });
+      const r = await pedirCodigo(email.trim().toLowerCase());
       if (r.ok) setPaso("codigo");
       else if (r.error === "no-autorizado") setError("Tu correo no tiene acceso todavía. Contacta con el administrador.");
       else setError("No se pudo enviar el código. Inténtalo de nuevo en unos minutos.");
@@ -74,8 +74,8 @@ function Login({ noAutorizado }: { noAutorizado: boolean }) {
     setError(null);
     setOcupado(true);
     try {
-      const r = await verifyLoginCode({ data: { email: email.trim().toLowerCase(), code: codigo.trim() } });
-      if (!r.ok) {
+      const r = await verificarCodigo(email.trim().toLowerCase(), codigo.trim());
+      if (!r.ok || !r.tokenHash) {
         setError(r.error === "no-autorizado" ? "Tu correo no tiene acceso todavía." : "Código incorrecto o caducado.");
       } else {
         const { error } = await supabase.auth.verifyOtp({ token_hash: r.tokenHash, type: "magiclink" });
