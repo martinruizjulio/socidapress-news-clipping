@@ -1351,6 +1351,8 @@ interface LibraryViewProps {
   onToggleTerminado: (id: string) => void;
   onNew: () => void;
   personas: Persona[];
+  // Lista de periódicos del selector "Periódico" (editable desde /admin).
+  periodicos: string[];
   // Presente solo si había un análisis en curso antes de entrar en la
   // Biblioteca (para poder volver a él sin perderlo).
   onVolverAnalisis?: () => void;
@@ -1366,6 +1368,7 @@ function LibraryView({
   onUpdate,
   onNew,
   personas,
+  periodicos,
   onVolverAnalisis,
 }: LibraryViewProps) {
   // La biblioteca se muestra ordenada por fecha y hora de la noticia (la
@@ -1385,6 +1388,7 @@ function LibraryView({
   // Filtros de la biblioteca: por fecha de la noticia, si está editada,
   // si está terminada y por quién la ha editado. Al haber muchos análisis
   // acumulados, estos filtros son necesarios para encontrar algo.
+  const [filtroPeriodico, setFiltroPeriodico] = useState<string>("todas");
   const [filtroFechaDesde, setFiltroFechaDesde] = useState("");
   const [filtroFechaHasta, setFiltroFechaHasta] = useState("");
   const [filtroEditado, setFiltroEditado] = useState<"todas" | "si" | "no">("todas");
@@ -1395,6 +1399,7 @@ function LibraryView({
   const [filtroGenero, setFiltroGenero] = useState<"todas" | Genero>("todas");
 
   const hayFiltrosActivos =
+    filtroPeriodico !== "todas" ||
     filtroFechaDesde !== "" ||
     filtroFechaHasta !== "" ||
     filtroEditado !== "todas" ||
@@ -1405,6 +1410,7 @@ function LibraryView({
     filtroGenero !== "todas";
 
   const limpiarFiltros = () => {
+    setFiltroPeriodico("todas");
     setFiltroFechaDesde("");
     setFiltroFechaHasta("");
     setFiltroEditado("todas");
@@ -1417,6 +1423,7 @@ function LibraryView({
 
   const noticiasFiltradas = useMemo(() => {
     return noticiasOrdenadas.filter((n) => {
+      if (filtroPeriodico !== "todas" && n.periodico !== filtroPeriodico) return false;
       if (filtroFechaDesde && (!n.fecha || n.fecha < filtroFechaDesde)) return false;
       if (filtroFechaHasta && (!n.fecha || n.fecha > filtroFechaHasta)) return false;
       const editada = estaEditada(n);
@@ -1438,6 +1445,7 @@ function LibraryView({
     });
   }, [
     noticiasOrdenadas,
+    filtroPeriodico,
     filtroFechaDesde,
     filtroFechaHasta,
     filtroEditado,
@@ -1565,10 +1573,24 @@ function LibraryView({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Periódico</Label>
-              <Input
-                value={draft.periodico}
-                onChange={(e) => setDraft({ ...draft, periodico: e.target.value })}
-              />
+              <Select
+                value={draft.periodico || ""}
+                onValueChange={(v) =>
+                  setDraft({ ...draft, periodico: v === SIN_ESPECIFICAR ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Periódico" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                  {periodicos.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Titular</Label>
@@ -1622,10 +1644,24 @@ function LibraryView({
                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Periódico</Label>
-                    <Input
+                    <Select
                       value={b.periodico ?? ""}
-                      onChange={(e) => updateBlock(b.id, { periodico: e.target.value })}
-                    />
+                      onValueChange={(v) =>
+                        updateBlock(b.id, { periodico: v === SIN_ESPECIFICAR ? undefined : v })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Periódico" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                        {periodicos.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Fecha</Label>
@@ -1843,6 +1879,22 @@ function LibraryView({
           <>
             <div className="mb-4 space-y-3 rounded-md border bg-muted/30 p-3">
               <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Periódico</Label>
+                  <Select value={filtroPeriodico} onValueChange={setFiltroPeriodico}>
+                    <SelectTrigger className="h-8 w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      {periodicos.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-1">
                   <Label htmlFor="filtro-fecha-desde" className="text-xs">
                     Desde
@@ -2211,6 +2263,23 @@ export default function SocidaPressApp() {
         .select("email,nombre,apellidos")
         .order("email");
       if (!error && data) setPersonas(data as Persona[]);
+    })();
+  }, []);
+
+  // Lista de periódicos para el selector "Periódico" de cada bloque
+  // (editable desde /admin, solo administradores). Se muestra en orden
+  // alfabético aunque la tabla no lo esté.
+  const [periodicos, setPeriodicos] = useState<string[]>([]);
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.from("periodicos").select("nombre");
+      if (!error && data) {
+        setPeriodicos(
+          (data as { nombre: string }[])
+            .map((p) => p.nombre)
+            .sort((a, b) => a.localeCompare(b, "es")),
+        );
+      }
     })();
   }, []);
 
@@ -4441,17 +4510,27 @@ export default function SocidaPressApp() {
                             className="font-semibold"
                           />
                           <div className="grid gap-2 sm:grid-cols-3">
-                            <Input
-                              type="text"
+                            <Select
                               value={b.periodico ?? ""}
-                              placeholder="Periódico (opcional)"
-                              onChange={(e) => {
-                                const v = e.target.value;
+                              onValueChange={(v) => {
+                                const periodico = v === SIN_ESPECIFICAR ? undefined : v;
                                 setTextBlocks((prev) =>
-                                  prev.map((x) => (x.id === b.id ? { ...x, periodico: v } : x)),
+                                  prev.map((x) => (x.id === b.id ? { ...x, periodico } : x)),
                                 );
                               }}
-                            />
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Periódico (opcional)" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                                {periodicos.map((p) => (
+                                  <SelectItem key={p} value={p}>
+                                    {p}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             <Input
                               type="date"
                               value={b.fecha ?? ""}
@@ -4721,6 +4800,7 @@ export default function SocidaPressApp() {
             onToggleTerminado={toggleTerminado}
             onNew={handleReset}
             personas={personas}
+            periodicos={periodicos}
             onVolverAnalisis={previousStage ? volverAlAnalisis : undefined}
           />
         )}

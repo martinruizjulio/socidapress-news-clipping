@@ -80,6 +80,21 @@ export type Database = {
         }
         Relationships: []
       }
+      periodicos: {
+        Row: {
+          creado_en: string
+          nombre: string
+        }
+        Insert: {
+          creado_en?: string
+          nombre: string
+        }
+        Update: {
+          creado_en?: string
+          nombre?: string
+        }
+        Relationships: []
+      }
       login_codes: {
         Row: {
           code_hash: string

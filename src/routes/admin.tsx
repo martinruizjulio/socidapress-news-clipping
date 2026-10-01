@@ -50,6 +50,37 @@ function Admin() {
   };
   useEffect(() => { void cargar(); }, []);
 
+  // Periódicos disponibles en el selector "Periódico" de cada bloque.
+  const [periodicos, setPeriodicos] = useState<string[]>([]);
+  const [nuevoPeriodico, setNuevoPeriodico] = useState("");
+  const [errorPeriodico, setErrorPeriodico] = useState<string | null>(null);
+
+  const cargarPeriodicos = async () => {
+    const { data } = await supabase.from("periodicos").select("nombre").order("nombre");
+    setPeriodicos((data ?? []).map((p) => p.nombre as string));
+  };
+  useEffect(() => { void cargarPeriodicos(); }, []);
+
+  const añadirPeriodico = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorPeriodico(null);
+    const nombre = nuevoPeriodico.trim();
+    if (!nombre) return;
+    const { error } = await supabase.from("periodicos").insert({ nombre });
+    if (error) {
+      setErrorPeriodico(error.code === "23505" ? "Ese periódico ya está en la lista." : "No se pudo añadir.");
+    } else {
+      setNuevoPeriodico("");
+      void cargarPeriodicos();
+    }
+  };
+
+  const quitarPeriodico = async (nombre: string) => {
+    if (!confirm(`¿Quitar "${nombre}" de la lista de periódicos?`)) return;
+    await supabase.from("periodicos").delete().eq("nombre", nombre);
+    void cargarPeriodicos();
+  };
+
   const añadir = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -131,6 +162,33 @@ function Admin() {
                 </div>
               </div>
             )}
+          </li>
+        ))}
+      </ul>
+
+      <h2 className="mt-10 text-xl font-bold text-foreground">Periódicos</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Lista que aparece en el selector "Periódico" al revisar o editar una noticia.
+      </p>
+      <form onSubmit={añadirPeriodico} className="mt-4 flex gap-2">
+        <input
+          value={nuevoPeriodico}
+          onChange={(e) => setNuevoPeriodico(e.target.value)}
+          placeholder="Nombre del periódico"
+          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+        <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          Añadir
+        </button>
+      </form>
+      {errorPeriodico && <p className="mt-2 text-sm text-destructive">{errorPeriodico}</p>}
+      <ul className="mt-4 divide-y divide-border rounded-md border border-border">
+        {periodicos.map((p) => (
+          <li key={p} className="flex items-center justify-between px-4 py-3 text-sm">
+            <span className="text-foreground">{p}</span>
+            <button onClick={() => quitarPeriodico(p)} className="text-destructive hover:underline">
+              Quitar
+            </button>
           </li>
         ))}
       </ul>
