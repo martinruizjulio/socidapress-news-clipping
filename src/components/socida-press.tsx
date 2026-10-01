@@ -1595,14 +1595,14 @@ function LibraryView({
             <h3 className="text-sm font-semibold">Bloques de texto ({draft.bloques.length})</h3>
             {draft.bloques.map((b) => (
               <div key={b.id} className="space-y-3 rounded-md border bg-muted/30 p-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="space-y-1 md:col-span-3">
-                    <Label className="text-xs">Título del bloque</Label>
-                    <Input
-                      value={b.titulo}
-                      onChange={(e) => updateBlock(b.id, { titulo: e.target.value })}
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Título del bloque</Label>
+                  <Input
+                    value={b.titulo}
+                    onChange={(e) => updateBlock(b.id, { titulo: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Periódico</Label>
                     <Input
@@ -1630,6 +1630,8 @@ function LibraryView({
                     <Label className="text-xs">Página</Label>
                     <Input value={String(b.page)} disabled />
                   </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Deporte</Label>
                     <Select
