@@ -29,7 +29,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { exportarNoticia, type FormatoExportacion } from "@/lib/noticia-export";
+import {
+  exportarNoticia,
+  exportarVarias,
+  type FormatoExportacion,
+} from "@/lib/noticia-export";
 import { toast } from "sonner";
 import {
   Newspaper,
@@ -1351,6 +1355,42 @@ function ExportMenu({ noticia }: { noticia: SavedNoticia }) {
   );
 }
 
+// Exporta varias noticias seleccionadas a la vez, en un solo archivo del
+// formato elegido (un PDF con todos los bloques seguidos, una sola hoja
+// Excel, etc.), en vez de tener que exportarlas una a una.
+function ExportMenuVarias({ noticias }: { noticias: SavedNoticia[] }) {
+  const [exportando, setExportando] = useState(false);
+  const exportar = async (formato: FormatoExportacion) => {
+    setExportando(true);
+    try {
+      await exportarVarias(noticias, formato);
+    } catch (err) {
+      toast.error(
+        `No se pudo exportar a ${formato}: ${err instanceof Error ? err.message : "error desconocido"}`,
+      );
+    } finally {
+      setExportando(false);
+    }
+  };
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" disabled={exportando || noticias.length === 0} className="gap-2">
+          <Download className="h-4 w-4" />
+          Exportar {noticias.length} seleccionada{noticias.length === 1 ? "" : "s"}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {FORMATOS_EXPORTACION.map(({ formato, etiqueta }) => (
+          <DropdownMenuItem key={formato} onClick={() => exportar(formato)}>
+            {etiqueta}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface LibraryViewProps {
   noticias: SavedNoticia[];
   editingId: string | null;
@@ -1384,6 +1424,18 @@ function LibraryView({
   periodicos,
   onVolverAnalisis,
 }: LibraryViewProps) {
+  // Selección múltiple para exportar varias noticias a la vez (un solo
+  // archivo con todas, en vez de exportarlas una a una).
+  const [seleccionadasIds, setSeleccionadasIds] = useState<Set<string>>(new Set());
+  const toggleSeleccionada = (id: string) => {
+    setSeleccionadasIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+
   // La biblioteca se muestra ordenada por fecha y hora de la noticia (la
   // más reciente primero), no por orden de guardado. Las que no tienen
   // fecha reconocible (vacía o texto libre no parseable) van al final,
@@ -1468,6 +1520,27 @@ function LibraryView({
     filtroCategoria,
     filtroGenero,
   ]);
+
+  // Noticias elegidas para exportar juntas (según los ids marcados, sin
+  // depender de qué filtro esté activo ahora mismo).
+  const noticiasSeleccionadas = useMemo(
+    () => noticiasOrdenadas.filter((n) => seleccionadasIds.has(n.id)),
+    [noticiasOrdenadas, seleccionadasIds],
+  );
+  const todasFiltradasSeleccionadas =
+    noticiasFiltradas.length > 0 && noticiasFiltradas.every((n) => seleccionadasIds.has(n.id));
+  const alternarSeleccionarTodas = () => {
+    setSeleccionadasIds((prev) => {
+      if (todasFiltradasSeleccionadas) {
+        const n = new Set(prev);
+        for (const noticia of noticiasFiltradas) n.delete(noticia.id);
+        return n;
+      }
+      const n = new Set(prev);
+      for (const noticia of noticiasFiltradas) n.add(noticia.id);
+      return n;
+    });
+  };
 
   const editing = noticias.find((n) => n.id === editingId) ?? null;
   const [draft, setDraft] = useState<SavedNoticia | null>(editing);
@@ -2046,6 +2119,36 @@ function LibraryView({
                 </span>
               </div>
             </div>
+            {/* Selección múltiple: elegir varias noticias (con las
+                casillas de cada tarjeta) y exportarlas todas juntas en un
+                solo archivo, en vez de una a una. */}
+            {noticiasFiltradas.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border bg-muted/30 p-3">
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={todasFiltradasSeleccionadas}
+                    onCheckedChange={alternarSeleccionarTodas}
+                  />
+                  Seleccionar todas las visibles
+                </label>
+                <span className="text-xs text-muted-foreground">
+                  {seleccionadasIds.size} seleccionada{seleccionadasIds.size === 1 ? "" : "s"}
+                </span>
+                {seleccionadasIds.size > 0 && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setSeleccionadasIds(new Set())}
+                    >
+                      Quitar selección
+                    </Button>
+                    <ExportMenuVarias noticias={noticiasSeleccionadas} />
+                  </>
+                )}
+              </div>
+            )}
             {noticiasFiltradas.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Ninguna noticia coincide con los filtros.
@@ -2059,6 +2162,12 @@ function LibraryView({
                   highlightIds.has(n.id) ? "border-primary" : ""
                 }`}
               >
+                <Checkbox
+                  checked={seleccionadasIds.has(n.id)}
+                  onCheckedChange={() => toggleSeleccionada(n.id)}
+                  className="shrink-0 self-start md:self-center"
+                  aria-label="Seleccionar esta noticia"
+                />
                 {n.bloques[0]?.imagenSeleccion || n.bloques[0]?.imagenPagina ? (
                   <img
                     src={n.bloques[0]?.imagenSeleccion ?? n.bloques[0]?.imagenPagina ?? ""}
