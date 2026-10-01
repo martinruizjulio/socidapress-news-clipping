@@ -1417,41 +1417,48 @@ interface LibraryViewProps {
 // falta, una Fase 3, marcando cuál está activa.
 const FASES_APP = [
   { n: 1, label: "Selección y edición de noticias" },
-  { n: 2, label: "Revisión y cierre" },
+  { n: 2, label: "Análisis de noticias" },
 ] as const;
 
-function FaseIndicador({ actual }: { actual: number }) {
+// Colores pastel/tenues para destacar la etiqueta de la fase activa, uno
+// distinto por fase para distinguirlas de un vistazo.
+const FASE_COLOR_ACTIVA: Record<number, string> = {
+  1: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300",
+  2: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-300",
+};
+const FASE_COLOR_ANILLO: Record<number, string> = {
+  1: "border-rose-400",
+  2: "border-sky-400",
+};
+
+function FaseIndicador({ actual, onSeleccionar }: { actual: number; onSeleccionar: (fase: 1 | 2) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-xs">
       {FASES_APP.map((f, i) => {
-        const completada = f.n < actual;
         const activa = f.n === actual;
         return (
           <div key={f.n} className="flex items-center gap-x-2 gap-y-1">
-            {activa ? (
-              <span className="flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
-                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-rose-400 text-[10px]">
-                  {f.n}
-                </span>
-                Fase {f.n}. {f.label}
-              </span>
-            ) : (
+            <button
+              type="button"
+              onClick={() => onSeleccionar(f.n as 1 | 2)}
+              className={
+                "flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors " +
+                (activa
+                  ? "border font-medium " + FASE_COLOR_ACTIVA[f.n]
+                  : "border border-transparent text-muted-foreground/60 hover:text-muted-foreground")
+              }
+              title={`Ir a la fase ${f.n}`}
+            >
               <span
                 className={
-                  "flex items-center gap-1.5 " +
-                  (completada ? "text-muted-foreground" : "text-muted-foreground/50")
+                  "flex h-4 w-4 items-center justify-center rounded-full border text-[10px] " +
+                  (activa ? FASE_COLOR_ANILLO[f.n] : "border-muted-foreground/40")
                 }
               >
-                {completada ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                ) : (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px]">
-                    {f.n}
-                  </span>
-                )}
-                Fase {f.n}. {f.label}
+                {f.n}
               </span>
-            )}
+              Fase {f.n}. {f.label}
+            </button>
             {i < FASES_APP.length - 1 && (
               <span className="h-px w-8 bg-border sm:w-12" aria-hidden="true" />
             )}
@@ -1501,6 +1508,12 @@ function LibraryView({
     return [...noticias].sort((a, b) => claveTiempo(b) - claveTiempo(a));
   }, [noticias]);
 
+  // Fase del flujo de trabajo que se está mostrando: Fase 1 (selección y
+  // edición) tiene las noticias aún no marcadas como Terminado; al
+  // terminarlas pasan a la Fase 2 (análisis de noticias). Se cambia de
+  // fase pinchando en su etiqueta, en FaseIndicador.
+  const [fase, setFase] = useState<1 | 2>(1);
+
   // Filtros de la biblioteca: por fecha de la noticia, si está editada,
   // si está terminada y por quién la ha editado. Al haber muchos análisis
   // acumulados, estos filtros son necesarios para encontrar algo.
@@ -1539,6 +1552,8 @@ function LibraryView({
 
   const noticiasFiltradas = useMemo(() => {
     return noticiasOrdenadas.filter((n) => {
+      if (fase === 1 && n.terminado) return false;
+      if (fase === 2 && !n.terminado) return false;
       if (filtroPeriodico !== "todas" && n.periodico !== filtroPeriodico) return false;
       if (filtroFechaDesde && (!n.fecha || n.fecha < filtroFechaDesde)) return false;
       if (filtroFechaHasta && (!n.fecha || n.fecha > filtroFechaHasta)) return false;
@@ -1561,6 +1576,7 @@ function LibraryView({
     });
   }, [
     noticiasOrdenadas,
+    fase,
     filtroPeriodico,
     filtroFechaDesde,
     filtroFechaHasta,
@@ -2008,7 +2024,7 @@ function LibraryView({
             Nueva noticia
           </Button>
         </div>
-        <FaseIndicador actual={1} />
+        <FaseIndicador actual={fase} onSeleccionar={setFase} />
       </CardHeader>
       <CardContent>
         {noticias.length === 0 ? (
