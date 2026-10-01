@@ -1289,6 +1289,15 @@ function EstadoNoticiaBadges({
           por {nombrePersona(noticia.terminadoPor, personas)}
         </span>
       )}
+      {/* Mientras no está Terminada, la noticia está en la Fase 1 (análisis
+          y revisión); al marcarla Terminada pasa a la Fase 2 (el proceso
+          posterior). No hace falta una etiqueta "Fase 1" aparte: se
+          sobreentiende mientras no aparezca esta. */}
+      {noticia.terminado && (
+        <Badge className="gap-1 border-blue-600 bg-blue-600 text-white hover:bg-blue-600">
+          FASE 2
+        </Badge>
+      )}
     </div>
   );
 }
