@@ -85,6 +85,8 @@ interface ExtractedTextBlock {
   text: string;
   // Disciplina deportiva de la noticia (lista cerrada, DEPORTES_OPCIONES).
   deporte?: string;
+  // Si la modalidad de ese deporte es olímpica o paralímpica.
+  categoriaDeporte?: CategoriaDeporte;
   // Si el texto es una noticia de prensa o un escrito propio del
   // protagonista (columna, carta, testimonio...).
   tipoTexto?: TipoTexto;
@@ -107,25 +109,26 @@ interface Metadata {
 type Stage = "form" | "region" | "processing" | "select" | "done" | "library";
 
 // Disciplinas disponibles para etiquetar cada bloque (foto + texto). Lista
-// cerrada, igual en la pantalla de revisión y en la edición posterior.
+// cerrada, igual en la pantalla de revisión y en la edición posterior. Cada
+// deporte aparece una sola vez: si es olímpico o paralímpico se indica aparte
+// con CATEGORIAS_DEPORTE_OPCIONES, en vez de duplicar el nombre del deporte.
 const DEPORTES_OPCIONES = [
-  "Bádminton dobles y mixtos",
-  "Bádminton individual",
-  "Boxeo individual",
-  "Esgrima individual",
-  "Esgrima silla de ruedas",
-  "Judo individual",
-  "Judo paralímpico",
-  "Lucha libre olímpica individual",
-  "Taekwondo individual",
-  "Taekwondo paralímpico",
-  "Tenis dobles y mixtos",
-  "Tenis individual",
-  "Tenis mesa dobles y mixtos",
-  "Tenis mesa individual",
-  "Tenis mesa paralímpico individual",
-  "Tenis silla de ruedas individual",
+  "Bádminton",
+  "Boxeo",
+  "Esgrima",
+  "Judo",
+  "Lucha libre olímpica",
+  "Taekwondo",
+  "Tenis",
+  "Tenis mesa",
 ] as const;
+
+// Si la disciplina marcada arriba es olímpica o paralímpica.
+type CategoriaDeporte = "olimpico" | "paralimpico";
+const CATEGORIAS_DEPORTE_OPCIONES: { value: CategoriaDeporte; label: string }[] = [
+  { value: "olimpico", label: "Olímpico" },
+  { value: "paralimpico", label: "Paralímpico" },
+];
 
 // Si el texto del bloque es una noticia redactada por un periodista o un
 // escrito en primera persona del propio protagonista (columna, carta,
@@ -149,6 +152,8 @@ export interface SavedBlock {
   texto: string;
   // Disciplina deportiva de la noticia (lista cerrada, DEPORTES_OPCIONES).
   deporte?: string;
+  // Si la modalidad de ese deporte es olímpica o paralímpica.
+  categoriaDeporte?: CategoriaDeporte;
   // Si el texto es una noticia de prensa o un escrito propio del
   // protagonista (columna, carta, testimonio...).
   tipoTexto?: TipoTexto;
@@ -1375,6 +1380,7 @@ function LibraryView({
   const [filtroTerminado, setFiltroTerminado] = useState<"todas" | "si" | "no">("todas");
   const [filtroPersona, setFiltroPersona] = useState<string>("todas");
   const [filtroDeporte, setFiltroDeporte] = useState<string>("todas");
+  const [filtroCategoria, setFiltroCategoria] = useState<"todas" | CategoriaDeporte>("todas");
 
   const hayFiltrosActivos =
     filtroFechaDesde !== "" ||
@@ -1382,7 +1388,8 @@ function LibraryView({
     filtroEditado !== "todas" ||
     filtroTerminado !== "todas" ||
     filtroPersona !== "todas" ||
-    filtroDeporte !== "todas";
+    filtroDeporte !== "todas" ||
+    filtroCategoria !== "todas";
 
   const limpiarFiltros = () => {
     setFiltroFechaDesde("");
@@ -1391,6 +1398,7 @@ function LibraryView({
     setFiltroTerminado("todas");
     setFiltroPersona("todas");
     setFiltroDeporte("todas");
+    setFiltroCategoria("todas");
   };
 
   const noticiasFiltradas = useMemo(() => {
@@ -1405,6 +1413,11 @@ function LibraryView({
       if (filtroPersona !== "todas" && n.editadoPor !== filtroPersona) return false;
       if (filtroDeporte !== "todas" && !n.bloques.some((b) => b.deporte === filtroDeporte))
         return false;
+      if (
+        filtroCategoria !== "todas" &&
+        !n.bloques.some((b) => b.categoriaDeporte === filtroCategoria)
+      )
+        return false;
       return true;
     });
   }, [
@@ -1415,6 +1428,7 @@ function LibraryView({
     filtroTerminado,
     filtroPersona,
     filtroDeporte,
+    filtroCategoria,
   ]);
 
   const editing = noticias.find((n) => n.id === editingId) ?? null;
@@ -1599,18 +1613,16 @@ function LibraryView({
                   <div className="space-y-1">
                     <Label className="text-xs">Fecha</Label>
                     <Input
-                      type={b.fecha ? "date" : "text"}
+                      type="date"
                       value={b.fecha}
-                      placeholder="No detectada, revisa el PDF"
                       onChange={(e) => updateBlock(b.id, { fecha: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Hora</Label>
                     <Input
-                      type={b.hora ? "time" : "text"}
+                      type="time"
                       value={b.hora}
-                      placeholder="No detectada, revisa el PDF"
                       onChange={(e) => updateBlock(b.id, { hora: e.target.value })}
                     />
                   </div>
@@ -1634,6 +1646,29 @@ function LibraryView({
                         {DEPORTES_OPCIONES.map((d) => (
                           <SelectItem key={d} value={d}>
                             {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Olímpico/Paralímpico</Label>
+                    <Select
+                      value={b.categoriaDeporte ?? ""}
+                      onValueChange={(v) =>
+                        updateBlock(b.id, {
+                          categoriaDeporte: v === SIN_ESPECIFICAR ? undefined : (v as CategoriaDeporte),
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Olímpico/Paralímpico" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                        {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
+                          <SelectItem key={c.value} value={c.value}>
+                            {c.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1853,6 +1888,25 @@ function LibraryView({
                       {DEPORTES_OPCIONES.map((d) => (
                         <SelectItem key={d} value={d}>
                           {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Olímpico/Paralímpico</Label>
+                  <Select
+                    value={filtroCategoria}
+                    onValueChange={(v) => setFiltroCategoria(v as typeof filtroCategoria)}
+                  >
+                    <SelectTrigger className="h-8 w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -3783,6 +3837,7 @@ export default function SocidaPressApp() {
         hora: t.hora || metadata.hora,
         texto: t.text,
         deporte: t.deporte,
+        categoriaDeporte: t.categoriaDeporte,
         tipoTexto: t.tipoTexto,
         imagenPagina: pi?.fullDataUrl ?? null,
         imagenSeleccion: t.cropDataUrl ?? pi?.cropDataUrl ?? null,
@@ -3905,6 +3960,7 @@ export default function SocidaPressApp() {
           fecha: t.fecha ?? "",
           hora: t.hora ?? "",
           deporte: t.deporte ?? "",
+          categoriaDeporte: t.categoriaDeporte ?? "",
           tipoTexto: t.tipoTexto ?? "",
           texto: t.text,
           // Imagen completa de la página de donde sale el bloque y, si el
@@ -4336,9 +4392,8 @@ export default function SocidaPressApp() {
                               }}
                             />
                             <Input
-                              type={b.fecha ? "date" : "text"}
+                              type="date"
                               value={b.fecha ?? ""}
-                              placeholder="No detectada, revisa el PDF"
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setTextBlocks((prev) =>
@@ -4347,9 +4402,8 @@ export default function SocidaPressApp() {
                               }}
                             />
                             <Input
-                              type={b.hora ? "time" : "text"}
+                              type="time"
                               value={b.hora ?? ""}
-                              placeholder="No detectada, revisa el PDF"
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setTextBlocks((prev) =>
@@ -4358,7 +4412,7 @@ export default function SocidaPressApp() {
                               }}
                             />
                           </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="grid gap-2 sm:grid-cols-3">
                             <Select
                               value={b.deporte ?? ""}
                               onValueChange={(v) => {
@@ -4376,6 +4430,28 @@ export default function SocidaPressApp() {
                                 {DEPORTES_OPCIONES.map((d) => (
                                   <SelectItem key={d} value={d}>
                                     {d}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={b.categoriaDeporte ?? ""}
+                              onValueChange={(v) => {
+                                const categoriaDeporte =
+                                  v === SIN_ESPECIFICAR ? undefined : (v as CategoriaDeporte);
+                                setTextBlocks((prev) =>
+                                  prev.map((x) => (x.id === b.id ? { ...x, categoriaDeporte } : x)),
+                                );
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Olímpico/Paralímpico" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SIN_ESPECIFICAR}>Sin especificar</SelectItem>
+                                {CATEGORIAS_DEPORTE_OPCIONES.map((c) => (
+                                  <SelectItem key={c.value} value={c.value}>
+                                    {c.label}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
